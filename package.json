@@ -1,0 +1,31 @@
+{
+  "name": "bento-do",
+  "version": "1.0.0",
+  "description": "Group 6 - Final Project Submission",
+  "main": "index.js",
+  "scripts": {
+    "start": "node ./src/server.js",
+    "dev": "nodemon ./src/server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AriqFaridzki/bento-do.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/AriqFaridzki/bento-do/issues"
+  },
+  "homepage": "https://github.com/AriqFaridzki/bento-do#readme",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "pg": "^8.20.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
