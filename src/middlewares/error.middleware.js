@@ -1,6 +1,5 @@
-// ==========================================
 // GLOBAL ERROR HANDLING MIDDLEWARE
-// ==========================================
+
 export const errorMiddleware = (err, req, res, next) => {
   // LOG ERROR
 

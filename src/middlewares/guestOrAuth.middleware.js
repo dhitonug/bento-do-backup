@@ -2,9 +2,8 @@ import { verifyToken } from "../utils/jwt.js";
 
 import * as guestRepo from "../modules/guest/guest.repository.js";
 
-// ==========================================
 // GUEST OR AUTH MIDDLEWARE
-// ==========================================
+
 export const guestOrAuthMiddleware = async (req, res, next) => {
   try {
     // PRIORITAS:

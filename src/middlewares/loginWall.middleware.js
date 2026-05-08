@@ -1,7 +1,6 @@
-// ==========================================
 // LOGIN WALL MIDDLEWARE
 // Memaksa guest untuk login sebelum akses fitur tertentu
-// ==========================================
+
 export const loginWallMiddleware = (req, res, next) => {
   try {
     // CEK APAKAH USER SUDAH LOGIN
