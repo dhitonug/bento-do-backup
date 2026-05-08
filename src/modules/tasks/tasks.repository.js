@@ -82,6 +82,8 @@ export const getTasksWithPagination = async (identifier, limit, offset) => {
     `
         SELECT
           id,
+          user_id,
+          guest_session_id,
           title,
           energy_weight,
           deadline,
@@ -131,6 +133,8 @@ export const getTaskById = async (id, identifier) => {
     `
         SELECT
           id,
+          user_id,
+          guest_session_id,
           title,
           energy_weight,
           deadline,
