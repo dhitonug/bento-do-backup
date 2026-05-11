@@ -1,69 +1,29 @@
-import express from "express";
-import cors from "cors";
-import cookieParser from "cookie-parser";
-import helmet from "helmet";
-import { xss } from "express-xss-sanitizer";
-import passport from "passport";
+import pkg from "pg";
+import dotenv from "dotenv";
 
-// IMPORT ROUTES
+dotenv.config();
 
-import authRoutes from "./modules/auth/auth.routes.js";
-import guestRoutes from "./modules/guest/guest.routes.js";
-import taskRoutes from "./modules/tasks/tasks.routes.js";
+const { Pool } = pkg;
 
-// IMPORT ERROR MIDDLEWARE (TAMBAHAN)
+const isProduction = process.env.NODE_ENV === "production";
+const shouldUseSSL =
+  process.env.DB_SSL === "true" || (isProduction && !!process.env.DATABASE_URL);
 
-import errorMiddleware from "./middlewares/error.middleware.js";
-
-// CREATE APP
-
-const app = express();
-
-// GLOBAL MIDDLEWARES
-
-app.use(express.json());
-app.use(cookieParser());
-
-app.use(
-  cors({
-    origin: "http://localhost:5173",
-    allowedHeaders: [
-      "Authorization",
-      "Content-Type",
-      "x-guest-session-token", 
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    credentials: true,
-  }),
-);
-
-app.use(helmet());
-app.use(xss());
-app.use(passport.initialize());
-
-// ROOT ENDPOINT
-
-app.get("/", (req, res) => {
-  res.send("Hello World! Selamat datang di Bento-do API 🚀");
+export const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: shouldUseSSL
+    ? {
+        rejectUnauthorized: false,
+      }
+    : false,
+  max: Number(process.env.DB_POOL_MAX) || 10,
+  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS) || 30000,
+  connectionTimeoutMillis:
+    Number(process.env.DB_CONNECTION_TIMEOUT_MS) || 10000,
 });
 
-// API ROUTES
-
-app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/guest", guestRoutes);
-app.use("/api/v1/tasks", taskRoutes);
-
-// ERROR HANDLING MIDDLEWARE (TAMBAHAN)
-
-app.use(errorMiddleware);
-
-// 404 HANDLER
-
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: "Endpoint tidak ditemukan!",
-  });
+db.on("error", (error) => {
+  console.error("UNEXPECTED DATABASE POOL ERROR:", error.message);
 });
 
-export default app;
+export default db;

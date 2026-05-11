@@ -36,11 +36,9 @@ const shutdown = async (signal) => {
 
 const startServer = async () => {
   try {
-    // TEST DATABASE CONNECTION
     await db.query("SELECT NOW()");
     console.log("✅ Database connected successfully!");
 
-    // START SERVER
     server = app.listen(PORT, () => {
       console.log(`🚀 Bento-do API running on port ${PORT}`);
     });

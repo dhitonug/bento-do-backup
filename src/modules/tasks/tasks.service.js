@@ -57,20 +57,7 @@ export const createTask = async (data) => {
   return await taskRepo.createTask(data);
 };
 
-// GET TASK BY ID
-export const getTaskById = async (id, identifier) => {
-  assertIdentifier(identifier);
-
-  const task = await taskRepo.getTaskById(id, identifier);
-
-  if (!task) {
-    throw createAppError("Tugas tidak ditemukan!", 404);
-  }
-
-  return task;
-};
-
-// GET TASKS WITH PAGINATION
+// GET ALL TASKS WITH PAGINATION
 export const getTasksWithPagination = async (
   identifier,
   page = 1,
@@ -101,6 +88,38 @@ export const getTasksWithPagination = async (
     total_pages: totalPages,
     data: result.data,
   };
+};
+
+// GET ZEN DASHBOARD
+export const getZenDashboard = async (identifier) => {
+  assertIdentifier(identifier);
+
+  const result = await taskRepo.getZenDashboardTasks(identifier);
+
+  return {
+    current_energy: result.current_energy,
+    max_energy: result.max_energy,
+    is_critical_energy: result.current_energy < 30,
+    hidden_count: result.hidden_count,
+    hidden_message:
+      result.hidden_count > 0
+        ? "Sistem menyembunyikan sisa tugas untuk melindungi energi mental Anda."
+        : null,
+    data: result.data,
+  };
+};
+
+// GET TASK BY ID
+export const getTaskById = async (id, identifier) => {
+  assertIdentifier(identifier);
+
+  const task = await taskRepo.getTaskById(id, identifier);
+
+  if (!task) {
+    throw createAppError("Tugas tidak ditemukan!", 404);
+  }
+
+  return task;
 };
 
 // UPDATE TASK

@@ -32,11 +32,16 @@ router.get(
 );
 
 // IMPORTANT:
-// Jika nanti menambah route spesifik seperti:
-// /zen-dashboard
-// /templates/apply
-// letakkan DI ATAS route "/:id"
-// agar tidak dianggap sebagai id parameter.
+// Route spesifik HARUS diletakkan di atas "/:id"
+// agar tidak dianggap sebagai parameter id.
+
+// GET ZEN DASHBOARD
+// GET /api/v1/tasks/zen-dashboard
+router.get(
+  "/zen-dashboard",
+  guestOrAuthMiddleware,
+  taskController.getZenDashboard,
+);
 
 // GET TASK BY ID
 // GET /api/v1/tasks/:id

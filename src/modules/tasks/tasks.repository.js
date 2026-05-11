@@ -1,5 +1,8 @@
 import { db } from "../../config/db.js";
 
+// KONSTANTA
+const DEFAULT_GUEST_MAX_ENERGY = 240;
+
 // HELPER
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
@@ -19,6 +22,34 @@ const getIdentifierFilter = (identifier = {}) => {
   }
 
   throw new Error("Identifier tidak valid!");
+};
+
+const getEnergyContextByIdentifier = async (identifier, executor = db) => {
+  if (identifier?.user_id) {
+    const { rows } = await executor.query(
+      `
+        SELECT
+          current_energy,
+          max_energy
+        FROM users
+        WHERE id = $1
+        AND deleted_at IS NULL
+      `,
+      [identifier.user_id],
+    );
+
+    if (rows[0]) {
+      return {
+        current_energy: rows[0].current_energy,
+        max_energy: rows[0].max_energy,
+      };
+    }
+  }
+
+  return {
+    current_energy: DEFAULT_GUEST_MAX_ENERGY,
+    max_energy: DEFAULT_GUEST_MAX_ENERGY,
+  };
 };
 
 // CREATE TASK
@@ -72,7 +103,10 @@ export const createTask = async (data, executor = db) => {
 };
 
 // COUNT ACTIVE TASKS
-export const countActiveTasksByIdentifier = async (identifier, executor = db) => {
+export const countActiveTasksByIdentifier = async (
+  identifier,
+  executor = db,
+) => {
   const { field, value } = getIdentifierFilter(identifier);
 
   const { rows } = await executor.query(
@@ -136,6 +170,80 @@ export const getTasksWithPagination = async (
   return {
     data: rows,
     total_items: countResult.rows[0]?.total_items ?? 0,
+  };
+};
+
+// GET ZEN DASHBOARD TASKS
+export const getZenDashboardTasks = async (identifier, executor = db) => {
+  const { field, value } = getIdentifierFilter(identifier);
+  const energyContext = await getEnergyContextByIdentifier(identifier, executor);
+
+  const { rows } = await executor.query(
+    `
+      SELECT
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+      FROM tasks
+      WHERE ${field} = $1
+      AND status IN ('pending', 'in_progress')
+      AND deleted_at IS NULL
+      ORDER BY
+        CASE
+          WHEN $2 < 30 AND energy_weight = 'Ringan' THEN 0
+          WHEN $2 < 30 AND energy_weight <> 'Ringan' THEN 1
+          ELSE 0
+        END ASC,
+        CASE
+          WHEN deadline IS NULL THEN 1
+          ELSE 0
+        END ASC,
+        deadline ASC NULLS LAST,
+        CASE energy_weight
+          WHEN 'Ringan' THEN 0
+          WHEN 'Sedang' THEN 1
+          WHEN 'Berat' THEN 2
+          ELSE 3
+        END ASC,
+        CASE status
+          WHEN 'in_progress' THEN 0
+          WHEN 'pending' THEN 1
+          ELSE 2
+        END ASC,
+        created_at ASC
+      LIMIT 3
+    `,
+    [value, energyContext.current_energy],
+  );
+
+  const countResult = await executor.query(
+    `
+      SELECT COUNT(*)::int AS total_items
+      FROM tasks
+      WHERE ${field} = $1
+      AND status IN ('pending', 'in_progress')
+      AND deleted_at IS NULL
+    `,
+    [value],
+  );
+
+  const totalActiveTasks = countResult.rows[0]?.total_items ?? 0;
+
+  return {
+    current_energy: energyContext.current_energy,
+    max_energy: energyContext.max_energy,
+    data: rows,
+    hidden_count: Math.max(0, totalActiveTasks - rows.length),
   };
 };
 
