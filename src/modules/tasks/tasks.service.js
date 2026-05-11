@@ -90,25 +90,6 @@ export const getTasksWithPagination = async (
   };
 };
 
-// GET ZEN DASHBOARD
-export const getZenDashboard = async (identifier) => {
-  assertIdentifier(identifier);
-
-  const result = await taskRepo.getZenDashboardTasks(identifier);
-
-  return {
-    current_energy: result.current_energy,
-    max_energy: result.max_energy,
-    is_critical_energy: result.current_energy < 30,
-    hidden_count: result.hidden_count,
-    hidden_message:
-      result.hidden_count > 0
-        ? "Sistem menyembunyikan sisa tugas untuk melindungi energi mental Anda."
-        : null,
-    data: result.data,
-  };
-};
-
 // GET TASK BY ID
 export const getTaskById = async (id, identifier) => {
   assertIdentifier(identifier);

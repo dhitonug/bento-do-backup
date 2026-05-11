@@ -73,22 +73,6 @@ export const getTasks = async (req, res) => {
   }
 };
 
-// GET ZEN DASHBOARD
-export const getZenDashboard = async (req, res) => {
-  try {
-    const identifier = getIdentifier(req);
-
-    const result = await taskService.getZenDashboard(identifier);
-
-    return res.status(200).json({
-      success: true,
-      ...result,
-    });
-  } catch (error) {
-    return handleTaskError(res, error, "GET ZEN DASHBOARD ERROR:");
-  }
-};
-
 // GET TASK BY ID
 export const getTaskById = async (req, res) => {
   try {

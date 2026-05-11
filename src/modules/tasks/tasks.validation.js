@@ -22,7 +22,9 @@ const isoDateTimeSchema = z
     message: "Format deadline harus ISO 8601! Contoh: 2024-12-31T23:59:59Z",
   });
 
-const optionalNullableDeadlineSchema = z.union([isoDateTimeSchema, z.null()]).optional();
+const optionalNullableDeadlineSchema = z
+  .union([isoDateTimeSchema, z.null()])
+  .optional();
 
 const optionalSourceTemplateSchema = z
   .union([
