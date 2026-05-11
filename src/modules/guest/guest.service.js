@@ -1,23 +1,29 @@
 import { v4 as uuidv4 } from "uuid";
-
 import * as guestRepo from "./guest.repository.js";
 
-// CREATE GUEST SESSION
+// HELPER
+const createAppError = (message, status = 500, extra = {}) => {
+  const error = new Error(message);
+  error.status = status;
+  Object.assign(error, extra);
+  return error;
+};
 
+// CREATE GUEST SESSION
 export const createGuestSession = async () => {
   try {
-    // GENERATE SESSION TOKEN
-
     const session_token = uuidv4();
-
-    // CREATE SESSION
 
     const session = await guestRepo.createGuestSession(session_token);
 
     return session;
   } catch (error) {
-    console.error("CREATE GUEST SESSION ERROR:", error);
+    console.error("CREATE GUEST SESSION SERVICE ERROR:", error);
 
-    throw new Error("Gagal membuat guest session!");
+    if (error.code === "23505") {
+      throw createAppError("Gagal membuat guest session. Silakan coba lagi.", 409);
+    }
+
+    throw createAppError("Gagal membuat guest session!", 500);
   }
 };

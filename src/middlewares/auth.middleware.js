@@ -1,58 +1,69 @@
 import { verifyToken } from "../utils/jwt.js";
 
-// AUTH MIDDLEWARE
+// HELPERS
+const unauthorized = (res, message) => {
+  return res.status(401).json({
+    success: false,
+    message,
+  });
+};
 
+const getBearerToken = (authHeader) => {
+  if (!authHeader) {
+    return null;
+  }
+
+  if (!authHeader.startsWith("Bearer ")) {
+    return false;
+  }
+
+  const token = authHeader.split(" ")[1]?.trim();
+
+  return token || false;
+};
+
+// AUTH MIDDLEWARE
 export const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
+    const token = getBearerToken(authHeader);
 
-    if (!authHeader) {
-      return res.status(401).json({
-        success: false,
-        message: "Authorization header dibutuhkan!",
-      });
+    if (token === null) {
+      return unauthorized(res, "Authorization header dibutuhkan!");
     }
 
-    // FORMAT HARUS:
-    // Bearer TOKEN
-    if (!authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        message: "Format token harus Bearer token!",
-      });
+    if (token === false) {
+      return unauthorized(res, "Format token harus Bearer token!");
     }
-
-    // AMBIL TOKEN
-
-    const token = authHeader.split(" ")[1];
-
-    // TOKEN KOSONG
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Token tidak ditemukan!",
-      });
-    }
-
-    // VERIFY JWT
 
     const decoded = verifyToken(token);
-
-    // SIMPAN USER KE REQUEST
 
     req.user = {
       id: decoded.id,
       email: decoded.email,
     };
 
-    next();
+    return next();
   } catch (error) {
     console.error("AUTH MIDDLEWARE ERROR:", error);
 
-    return res.status(401).json({
+    if (
+      error.name === "JsonWebTokenError" ||
+      error.name === "TokenExpiredError"
+    ) {
+      return unauthorized(
+        res,
+        error.name === "TokenExpiredError"
+          ? "Token sudah kadaluarsa!"
+          : "Token tidak valid!",
+      );
+    }
+
+    return res.status(500).json({
       success: false,
-      message: "Token tidak valid!",
+      message: "Terjadi kesalahan pada server.",
     });
   }
 };
+
+export default authMiddleware;

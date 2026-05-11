@@ -4,9 +4,8 @@ import { db } from "../../config/db.js";
 // Dipakai saat:
 // - register (cek email)
 // - login
-
-export const findUserByEmail = async (email) => {
-  const { rows } = await db.query(
+export const findUserByEmail = async (email, executor = db) => {
+  const { rows } = await executor.query(
     `
       SELECT
         id,
@@ -15,12 +14,12 @@ export const findUserByEmail = async (email) => {
         display_name,
         current_energy,
         max_energy,
-        created_at
+        created_at,
+        updated_at
       FROM users
-
       WHERE email = $1
       AND deleted_at IS NULL
-      `,
+    `,
     [email],
   );
 
@@ -28,25 +27,26 @@ export const findUserByEmail = async (email) => {
 };
 
 // CREATE USER
-
-export const createUser = async ({ email, password_hash, display_name }) => {
-  const { rows } = await db.query(
+export const createUser = async (
+  { email, password_hash, display_name },
+  executor = db,
+) => {
+  const { rows } = await executor.query(
     `
-    INSERT INTO users (
-      email,
-      password_hash,
-      display_name
-    )
-
-    VALUES ($1, $2, $3)
-
-    RETURNING
-      id,
-      email,
-      display_name,
-      current_energy,
-      max_energy,
-      created_at
+      INSERT INTO users (
+        email,
+        password_hash,
+        display_name
+      )
+      VALUES ($1, $2, $3)
+      RETURNING
+        id,
+        email,
+        display_name,
+        current_energy,
+        max_energy,
+        created_at,
+        updated_at
     `,
     [email, password_hash, display_name],
   );
@@ -56,9 +56,8 @@ export const createUser = async ({ email, password_hash, display_name }) => {
 
 // FIND USER BY ID
 // Dipakai middleware/profile
-
-export const findUserById = async (id) => {
-  const { rows } = await db.query(
+export const findUserById = async (id, executor = db) => {
+  const { rows } = await executor.query(
     `
       SELECT
         id,
@@ -69,10 +68,9 @@ export const findUserById = async (id) => {
         created_at,
         updated_at
       FROM users
-
       WHERE id = $1
       AND deleted_at IS NULL
-      `,
+    `,
     [id],
   );
 

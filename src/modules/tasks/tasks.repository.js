@@ -1,8 +1,9 @@
 import { db } from "../../config/db.js";
 
-// HELPER IDENTIFIER
+// HELPER
+const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
-const getIdentifierFilter = (identifier) => {
+const getIdentifierFilter = (identifier = {}) => {
   if (identifier.user_id) {
     return {
       field: "user_id",
@@ -10,16 +11,18 @@ const getIdentifierFilter = (identifier) => {
     };
   }
 
-  return {
-    field: "guest_session_id",
+  if (identifier.guest_session_id) {
+    return {
+      field: "guest_session_id",
+      value: identifier.guest_session_id,
+    };
+  }
 
-    value: identifier.guest_session_id,
-  };
+  throw new Error("Identifier tidak valid!");
 };
 
 // CREATE TASK
-
-export const createTask = async (data) => {
+export const createTask = async (data, executor = db) => {
   const {
     user_id,
     guest_session_id,
@@ -29,129 +32,138 @@ export const createTask = async (data) => {
     source_template,
   } = data;
 
-  const { rows } = await db.query(
+  const { rows } = await executor.query(
     `
-        INSERT INTO tasks (
-          user_id,
-          guest_session_id,
-          title,
-          energy_weight,
-          deadline,
-          source_template
-        )
-
-        VALUES (
-          $1,
-          $2,
-          $3,
-          $4,
-          $5,
-          $6
-        )
-
-        RETURNING
-          id,
-          user_id,
-          guest_session_id,
-          title,
-          energy_weight,
-          deadline,
-          status,
-          source_template,
-          created_at
-        `,
+      INSERT INTO tasks (
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        source_template
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+    `,
     [
-      user_id,
-      guest_session_id,
+      user_id ?? null,
+      guest_session_id ?? null,
       title,
       energy_weight,
-      deadline,
-      source_template || null,
+      deadline ?? null,
+      source_template ?? null,
     ],
   );
 
   return rows[0];
 };
 
-// GET TASKS WITH PAGINATION
-
-export const getTasksWithPagination = async (identifier, limit, offset) => {
+// COUNT ACTIVE TASKS
+export const countActiveTasksByIdentifier = async (identifier, executor = db) => {
   const { field, value } = getIdentifierFilter(identifier);
 
-  const { rows } = await db.query(
+  const { rows } = await executor.query(
     `
-        SELECT
-          id,
-          user_id,
-          guest_session_id,
-          title,
-          energy_weight,
-          deadline,
-          status,
-          source_template,
-          created_at,
-          updated_at
+      SELECT COUNT(*)::int AS total_items
+      FROM tasks
+      WHERE ${field} = $1
+      AND deleted_at IS NULL
+    `,
+    [value],
+  );
 
-        FROM tasks
+  return rows[0]?.total_items ?? 0;
+};
 
-        WHERE ${field} = $1
-        AND deleted_at IS NULL
+// GET TASKS WITH PAGINATION
+export const getTasksWithPagination = async (
+  identifier,
+  limit,
+  offset,
+  executor = db,
+) => {
+  const { field, value } = getIdentifierFilter(identifier);
 
-        ORDER BY created_at DESC
-
-        LIMIT $2
-        OFFSET $3
-        `,
+  const { rows } = await executor.query(
+    `
+      SELECT
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+      FROM tasks
+      WHERE ${field} = $1
+      AND deleted_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT $2
+      OFFSET $3
+    `,
     [value, limit, offset],
   );
 
-  const countResult = await db.query(
+  const countResult = await executor.query(
     `
-        SELECT COUNT(*)
-
-        FROM tasks
-
-        WHERE ${field} = $1
-        AND deleted_at IS NULL
-        `,
+      SELECT COUNT(*)::int AS total_items
+      FROM tasks
+      WHERE ${field} = $1
+      AND deleted_at IS NULL
+    `,
     [value],
   );
 
   return {
     data: rows,
-
-    total_items: parseInt(countResult.rows[0].count),
+    total_items: countResult.rows[0]?.total_items ?? 0,
   };
 };
 
 // GET TASK BY ID
-
-export const getTaskById = async (id, identifier) => {
+export const getTaskById = async (id, identifier, executor = db) => {
   const { field, value } = getIdentifierFilter(identifier);
 
-  const { rows } = await db.query(
+  const { rows } = await executor.query(
     `
-        SELECT
-          id,
-          user_id,
-          guest_session_id,
-          title,
-          energy_weight,
-          deadline,
-          status,
-          used_timer,
-          timer_duration,
-          source_template,
-          completed_at,
-          created_at,
-          updated_at
-
-        FROM tasks
-
-        WHERE id = $1
-        AND ${field} = $2
-        AND deleted_at IS NULL
-        `,
+      SELECT
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+      FROM tasks
+      WHERE id = $1
+      AND ${field} = $2
+      AND deleted_at IS NULL
+    `,
     [id, value],
   );
 
@@ -159,77 +171,93 @@ export const getTaskById = async (id, identifier) => {
 };
 
 // UPDATE TASK
-
-export const updateTask = async (id, identifier, data) => {
-  const { title, energy_weight, status, deadline } = data;
-
+export const updateTask = async (id, identifier, data, executor = db) => {
   const { field, value } = getIdentifierFilter(identifier);
 
-  const { rows } = await db.query(
+  const setClauses = [];
+  const values = [];
+
+  if (hasOwn(data, "title")) {
+    values.push(data.title);
+    setClauses.push(`title = $${values.length}`);
+  }
+
+  if (hasOwn(data, "energy_weight")) {
+    values.push(data.energy_weight);
+    setClauses.push(`energy_weight = $${values.length}`);
+  }
+
+  if (hasOwn(data, "deadline")) {
+    values.push(data.deadline);
+    setClauses.push(`deadline = $${values.length}`);
+  }
+
+  if (hasOwn(data, "status")) {
+    values.push(data.status);
+    setClauses.push(`status = $${values.length}`);
+
+    if (data.status === "done") {
+      setClauses.push(`completed_at = NOW()`);
+    } else {
+      setClauses.push(`completed_at = NULL`);
+    }
+  }
+
+  if (setClauses.length === 0) {
+    return await getTaskById(id, identifier, executor);
+  }
+
+  setClauses.push(`updated_at = NOW()`);
+
+  values.push(id);
+  const idParam = `$${values.length}`;
+
+  values.push(value);
+  const ownerParam = `$${values.length}`;
+
+  const { rows } = await executor.query(
     `
-        UPDATE tasks
-
-        SET
-          title = COALESCE($1, title),
-
-          energy_weight =
-            COALESCE(
-              $2,
-              energy_weight
-            ),
-
-          status =
-            COALESCE(
-              $3,
-              status
-            ),
-
-          deadline =
-            COALESCE(
-              $4,
-              deadline
-            ),
-
-          updated_at = NOW()
-
-        WHERE id = $5
-        AND ${field} = $6
-        AND deleted_at IS NULL
-
-        RETURNING
-          id,
-          title,
-          energy_weight,
-          deadline,
-          status,
-          source_template,
-          updated_at
-        `,
-    [title, energy_weight, status, deadline, id, value],
+      UPDATE tasks
+      SET ${setClauses.join(", ")}
+      WHERE id = ${idParam}
+      AND ${field} = ${ownerParam}
+      AND deleted_at IS NULL
+      RETURNING
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+    `,
+    values,
   );
 
   return rows[0] || null;
 };
 
 // SOFT DELETE TASK
-
-export const deleteTask = async (id, identifier) => {
+export const deleteTask = async (id, identifier, executor = db) => {
   const { field, value } = getIdentifierFilter(identifier);
 
-  const { rows } = await db.query(
+  const { rows } = await executor.query(
     `
-        UPDATE tasks
-
-        SET
-          deleted_at = NOW(),
-          updated_at = NOW()
-
-        WHERE id = $1
-        AND ${field} = $2
-        AND deleted_at IS NULL
-
-        RETURNING id
-        `,
+      UPDATE tasks
+      SET
+        deleted_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+      AND ${field} = $2
+      AND deleted_at IS NULL
+      RETURNING id
+    `,
     [id, value],
   );
 
@@ -237,30 +265,35 @@ export const deleteTask = async (id, identifier) => {
 };
 
 // MIGRATE GUEST TASKS TO USER
-// Dipakai saat guest register/login (auto sync)
-
-export const migrateGuestTasksToUser = async (guestSessionId, userId) => {
-  const { rows } = await db.query(
+export const migrateGuestTasksToUser = async (
+  guestSessionId,
+  userId,
+  executor = db,
+) => {
+  const { rows } = await executor.query(
     `
-        UPDATE tasks
-
-        SET
-          user_id = $1,
-          guest_session_id = NULL,
-          updated_at = NOW()
-
-        WHERE guest_session_id = $2
-        AND deleted_at IS NULL
-
-        RETURNING
-          id,
-          title,
-          energy_weight,
-          deadline,
-          status,
-          source_template,
-          updated_at
-        `,
+      UPDATE tasks
+      SET
+        user_id = $1,
+        guest_session_id = NULL,
+        updated_at = NOW()
+      WHERE guest_session_id = $2
+      AND deleted_at IS NULL
+      RETURNING
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+    `,
     [userId, guestSessionId],
   );
 

@@ -1,30 +1,49 @@
+const allowedSources = new Set(["body", "query", "params"]);
+
 export const validate =
   (schema, source = "body") =>
   (req, res, next) => {
-    // VALIDATE DATA
+    try {
+      // CEK SOURCE VALID
+      if (!allowedSources.has(source)) {
+        return res.status(500).json({
+          success: false,
+          message: `Source validasi tidak dikenali: ${source}`,
+        });
+      }
 
-    const result = schema.safeParse(req[source]);
+      // AMBIL DATA DARI REQUEST
+      const payload = req[source] ?? {};
 
-    // VALIDATION FAILED
+      // VALIDASI DENGAN ZOD
+      const result = schema.safeParse(payload);
 
-    if (!result.success) {
-      return res.status(400).json({
-        success: false,
-        message: result.error.issues[0]?.message || "Data tidak valid!",
-      });
+      // JIKA VALIDASI GAGAL
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          message: result.error.issues[0]?.message || "Data tidak valid!",
+        });
+      }
+
+      // TIMPA DATA REQUEST DENGAN HASIL PARSE YANG SUDAH BERSIH
+      // Ini penting agar:
+      // - type coercion dari Zod dipakai
+      // - field asing / tidak dipakai ikut dibersihkan
+      if (typeof req[source] === "object" && req[source] !== null) {
+        Object.keys(req[source]).forEach((key) => {
+          delete req[source][key];
+        });
+
+        Object.assign(req[source], result.data);
+      } else {
+        req[source] = result.data;
+      }
+
+      next();
+    } catch (error) {
+      next(error);
     }
-
-    // REPLACE CLEAN DATA
-
-    if (source === "query") {
-      // Untuk query, jangan replace objeknya, tapi update propertinya
-      Object.keys(result.data).forEach((key) => {
-        req[source][key] = result.data[key];
-      });
-    } else {
-      // Untuk body dan params, bisa langsung replace
-      req[source] = result.data;
-    }
-
-    next();
   };
+
+export default validate;

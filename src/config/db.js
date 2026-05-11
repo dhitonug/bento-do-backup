@@ -1,23 +1,69 @@
-import pkg from "pg";
-import dotenv from "dotenv";
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import { xss } from "express-xss-sanitizer";
+import passport from "passport";
 
-dotenv.config();
-const { Pool } = pkg;
+// IMPORT ROUTES
 
-// membuat koneksi ke postgresql dengan pooling
-export const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false,
-  },
+import authRoutes from "./modules/auth/auth.routes.js";
+import guestRoutes from "./modules/guest/guest.routes.js";
+import taskRoutes from "./modules/tasks/tasks.routes.js";
+
+// IMPORT ERROR MIDDLEWARE (TAMBAHAN)
+
+import errorMiddleware from "./middlewares/error.middleware.js";
+
+// CREATE APP
+
+const app = express();
+
+// GLOBAL MIDDLEWARES
+
+app.use(express.json());
+app.use(cookieParser());
+
+app.use(
+  cors({
+    origin: "http://localhost:5173",
+    allowedHeaders: [
+      "Authorization",
+      "Content-Type",
+      "x-guest-session-token", 
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    credentials: true,
+  }),
+);
+
+app.use(helmet());
+app.use(xss());
+app.use(passport.initialize());
+
+// ROOT ENDPOINT
+
+app.get("/", (req, res) => {
+  res.send("Hello World! Selamat datang di Bento-do API 🚀");
 });
 
-// Tes koneksi ke Neon.tech
-db.connect((err, client, release) => {
-  if (err) {
-    console.error("❌ Gagal menyambung ke Neon.tech:", err.message);
-  } else {
-    console.log("✅ Berhasil tersambung ke Database Neon.tech!");
-  }
-  if (client) release();
+// API ROUTES
+
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/guest", guestRoutes);
+app.use("/api/v1/tasks", taskRoutes);
+
+// ERROR HANDLING MIDDLEWARE (TAMBAHAN)
+
+app.use(errorMiddleware);
+
+// 404 HANDLER
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: "Endpoint tidak ditemukan!",
+  });
 });
+
+export default app;
