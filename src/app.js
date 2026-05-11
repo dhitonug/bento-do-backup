@@ -11,6 +11,7 @@ import taskRoutes from "./modules/tasks/tasks.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
 import templatesRoutes from "./modules/templates/templates.routes.js";
 import focusRoutes from "./modules/focus/focus.routes.js";
+import energyRoutes from "./modules/energy/energy.routes.js";
 
 import errorMiddleware from "./middlewares/error.middleware.js";
 
@@ -66,6 +67,7 @@ app.use("/api/v1/tasks", taskRoutes);
 app.use("/api/v1/dashboard", dashboardRoutes);
 app.use("/api/v1/templates", templatesRoutes);
 app.use("/api/v1/focus", focusRoutes);
+app.use("/api/v1/energy", energyRoutes);
 
 app.use((req, res) => {
   return res.status(404).json({

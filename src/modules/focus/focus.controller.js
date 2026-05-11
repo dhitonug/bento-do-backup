@@ -76,17 +76,28 @@ export const stopFocusSession = async (req, res) => {
       completed: "Sesi fokus selesai.",
       escaped: "Sesi fokus dihentikan lebih awal.",
       zombie_limit:
-        "Sesi fokus dihentikan otomatis karena mencapai batas maksimal 60 menit.",
+        "Sesi fokus dihentikan otomatis karena mencapai batas maksimal durasi yang diizinkan.",
       crash: "Sesi fokus diakhiri setelah pemulihan crash.",
     };
 
-    return res.status(200).json({
+    const response = {
       success: true,
       message:
         endReasonMessageMap[result.session.end_reason] ||
         "Sesi fokus berhasil dihentikan.",
-      ...result,
-    });
+      session: result.session,
+      task: result.task,
+    };
+
+    if (result.energy?.summary) {
+      response.energy = result.energy.summary;
+    }
+
+    if (result.energy?.effects?.length) {
+      response.energy_effects = result.energy.effects;
+    }
+
+    return res.status(200).json(response);
   } catch (error) {
     return handleFocusError(res, error, "STOP FOCUS SESSION ERROR:");
   }

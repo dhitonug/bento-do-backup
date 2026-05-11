@@ -1,4 +1,6 @@
+import { db } from "../../config/db.js";
 import * as taskRepo from "./tasks.repository.js";
+import * as energyService from "../energy/energy.service.js";
 
 // KONSTANTA
 const GUEST_MAX_ACTIVE_TASKS = 3;
@@ -36,8 +38,6 @@ export const createTask = async (data) => {
 
   assertIdentifier(identifier);
 
-  // LOGIN WALL RULE:
-  // Guest hanya boleh sampai 3 task aktif.
   if (identifier.guest_session_id && !identifier.user_id) {
     const activeTaskCount =
       await taskRepo.countActiveTasksByIdentifier(identifier);
@@ -107,19 +107,59 @@ export const getTaskById = async (id, identifier) => {
 export const updateTask = async (id, identifier, data) => {
   assertIdentifier(identifier);
 
-  const existing = await taskRepo.getTaskById(id, identifier);
+  const client = await db.connect();
 
-  if (!existing) {
-    throw createAppError("Tugas tidak ditemukan!", 404);
+  try {
+    await client.query("BEGIN");
+
+    const existing = await taskRepo.getTaskById(id, identifier, client);
+
+    if (!existing) {
+      throw createAppError("Tugas tidak ditemukan!", 404);
+    }
+
+    const updatedTask = await taskRepo.updateTask(id, identifier, data, client);
+
+    if (!updatedTask) {
+      throw createAppError("Gagal memperbarui tugas!", 400);
+    }
+
+    const becameDone =
+      existing.status !== "done" && updatedTask.status === "done";
+
+    let energy = {
+      effects: [],
+      summary: null,
+    };
+
+    if (becameDone) {
+      if (!updatedTask.used_timer) {
+        energy = await energyService.handleTaskCompletionWithoutTimer(
+          identifier,
+          updatedTask,
+          client,
+        );
+      } else {
+        energy = await energyService.applyCompletionRewardIfEligible(
+          identifier,
+          updatedTask,
+          client,
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+
+    return {
+      task: updatedTask,
+      energy,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const updatedTask = await taskRepo.updateTask(id, identifier, data);
-
-  if (!updatedTask) {
-    throw createAppError("Gagal memperbarui tugas!", 400);
-  }
-
-  return updatedTask;
 };
 
 // DELETE TASK

@@ -96,13 +96,24 @@ export const updateTask = async (req, res) => {
     const { id } = req.params;
     const identifier = getIdentifier(req);
 
-    const task = await taskService.updateTask(id, identifier, req.body);
+    const result = await taskService.updateTask(id, identifier, req.body);
+    const task = result.task ?? result;
 
-    return res.status(200).json({
+    const response = {
       success: true,
       message: "Tugas berhasil diperbarui.",
       data: task,
-    });
+    };
+
+    if (result.energy?.summary) {
+      response.energy = result.energy.summary;
+    }
+
+    if (result.energy?.effects?.length) {
+      response.energy_effects = result.energy.effects;
+    }
+
+    return res.status(200).json(response);
   } catch (error) {
     return handleTaskError(res, error, "UPDATE TASK ERROR:");
   }

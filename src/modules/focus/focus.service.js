@@ -1,6 +1,7 @@
 import { db } from "../../config/db.js";
 import * as taskRepo from "../tasks/tasks.repository.js";
 import * as focusRepo from "./focus.repository.js";
+import * as energyService from "../energy/energy.service.js";
 
 const createAppError = (message, status = 400, extra = {}) => {
   const error = new Error(message);
@@ -17,7 +18,20 @@ const assertIdentifier = (identifier) => {
 
 const MAX_FOCUS_MINUTES = focusRepo.getMaxFocusMinutes();
 
-const enrichActiveSession = (session) => {
+const buildTiming = (rawElapsedMinutes, sessionLimitMinutes) => {
+  const elapsed = Math.min(rawElapsedMinutes, sessionLimitMinutes);
+  const remaining = Math.max(0, sessionLimitMinutes - elapsed);
+  const zombieReached = rawElapsedMinutes >= sessionLimitMinutes;
+
+  return {
+    elapsed_minutes: elapsed,
+    remaining_minutes: remaining,
+    zombie_limit_reached: zombieReached,
+    session_limit_minutes: sessionLimitMinutes,
+  };
+};
+
+const enrichActiveSession = (session, timing) => {
   return {
     id: session.id,
     user_id: session.user_id,
@@ -27,9 +41,10 @@ const enrichActiveSession = (session) => {
     energy_weight: session.energy_weight,
     task_status: session.task_status,
     started_at: session.started_at,
-    elapsed_minutes: session.elapsed_minutes,
-    remaining_minutes: session.remaining_minutes,
-    zombie_limit_reached: session.zombie_limit_reached,
+    elapsed_minutes: timing.elapsed_minutes,
+    remaining_minutes: timing.remaining_minutes,
+    session_limit_minutes: timing.session_limit_minutes,
+    zombie_limit_reached: timing.zombie_limit_reached,
   };
 };
 
@@ -84,6 +99,19 @@ export const startFocusSession = async (identifier, taskId) => {
   try {
     await client.query("BEGIN");
 
+    const sessionLimitMinutes =
+      await energyService.getAvailableFocusMinutes(identifier, client);
+
+    if (sessionLimitMinutes <= 0) {
+      throw createAppError(
+        "Energi harian kamu habis. Tunggu reset berikutnya untuk memulai fokus lagi.",
+        403,
+        {
+          code: "ENERGY_DEPLETED",
+        },
+      );
+    }
+
     await focusRepo.markTaskInProgress(task.id, identifier, client);
 
     const session = await focusRepo.createFocusSession(
@@ -107,7 +135,8 @@ export const startFocusSession = async (identifier, taskId) => {
         energy_weight: task.energy_weight,
         started_at: session.started_at,
         elapsed_minutes: 0,
-        remaining_minutes: MAX_FOCUS_MINUTES,
+        remaining_minutes: sessionLimitMinutes,
+        session_limit_minutes: sessionLimitMinutes,
         zombie_limit_reached: false,
       },
     };
@@ -132,7 +161,15 @@ export const getActiveFocusSession = async (identifier) => {
     };
   }
 
-  if (activeSession.zombie_limit_reached) {
+  const sessionLimitMinutes =
+    await energyService.getAvailableFocusMinutes(identifier);
+
+  const timing = buildTiming(
+    activeSession.raw_elapsed_minutes,
+    sessionLimitMinutes,
+  );
+
+  if (timing.zombie_limit_reached) {
     const client = await db.connect();
 
     try {
@@ -142,9 +179,9 @@ export const getActiveFocusSession = async (identifier) => {
         activeSession.id,
         identifier,
         {
-          duration_minutes: MAX_FOCUS_MINUTES,
+          duration_minutes: sessionLimitMinutes,
           end_reason: "zombie_limit",
-          use_auto_end_time: true,
+          auto_end_limit_minutes: sessionLimitMinutes,
         },
         client,
       );
@@ -153,7 +190,18 @@ export const getActiveFocusSession = async (identifier) => {
         activeSession.task_id,
         identifier,
         {
-          duration_minutes: MAX_FOCUS_MINUTES,
+          duration_minutes: sessionLimitMinutes,
+          completed: false,
+        },
+        client,
+      );
+
+      const energy = await energyService.handleFocusStopEnergyEffects(
+        identifier,
+        {
+          task: updatedTask,
+          focus_session_id: stoppedSession.id,
+          duration_minutes: sessionLimitMinutes,
           completed: false,
         },
         client,
@@ -167,8 +215,10 @@ export const getActiveFocusSession = async (identifier) => {
           session: mapStoppedSession(stoppedSession, activeSession),
           task: updatedTask,
         },
+        energy: energy.summary,
+        energy_effects: energy.effects,
         message:
-          "Sesi fokus dihentikan otomatis karena mencapai batas maksimal 60 menit.",
+          "Sesi fokus dihentikan otomatis karena mencapai batas maksimal durasi yang diizinkan.",
       };
     } catch (error) {
       await client.query("ROLLBACK");
@@ -179,7 +229,7 @@ export const getActiveFocusSession = async (identifier) => {
   }
 
   return {
-    active_session: enrichActiveSession(activeSession),
+    active_session: enrichActiveSession(activeSession, timing),
     auto_stopped_session: null,
   };
 };
@@ -196,14 +246,22 @@ export const stopFocusSession = async (identifier, sessionId, endReason) => {
     throw createAppError("Sesi fokus aktif tidak ditemukan!", 404);
   }
 
-  let resolvedEndReason = endReason;
-  let resolvedDuration = activeSession.elapsed_minutes;
-  let useAutoEndTime = false;
+  const sessionLimitMinutes =
+    await energyService.getAvailableFocusMinutes(identifier);
 
-  if (activeSession.zombie_limit_reached) {
+  const timing = buildTiming(
+    activeSession.raw_elapsed_minutes,
+    sessionLimitMinutes,
+  );
+
+  let resolvedEndReason = endReason;
+  let resolvedDuration = timing.elapsed_minutes;
+  let autoEndLimitMinutes = null;
+
+  if (timing.zombie_limit_reached) {
     resolvedEndReason = "zombie_limit";
-    resolvedDuration = MAX_FOCUS_MINUTES;
-    useAutoEndTime = true;
+    resolvedDuration = sessionLimitMinutes;
+    autoEndLimitMinutes = sessionLimitMinutes;
   }
 
   const client = await db.connect();
@@ -217,7 +275,7 @@ export const stopFocusSession = async (identifier, sessionId, endReason) => {
       {
         duration_minutes: resolvedDuration,
         end_reason: resolvedEndReason,
-        use_auto_end_time: useAutoEndTime,
+        auto_end_limit_minutes: autoEndLimitMinutes,
       },
       client,
     );
@@ -232,11 +290,23 @@ export const stopFocusSession = async (identifier, sessionId, endReason) => {
       client,
     );
 
+    const energy = await energyService.handleFocusStopEnergyEffects(
+      identifier,
+      {
+        task: updatedTask,
+        focus_session_id: stoppedSession.id,
+        duration_minutes: resolvedDuration,
+        completed: resolvedEndReason === "completed",
+      },
+      client,
+    );
+
     await client.query("COMMIT");
 
     return {
       session: mapStoppedSession(stoppedSession, activeSession),
       task: updatedTask,
+      energy,
     };
   } catch (error) {
     await client.query("ROLLBACK");

@@ -42,29 +42,10 @@ export const findActiveFocusSessionByIdentifier = async (
         t.title AS task_title,
         t.energy_weight,
         t.status AS task_status,
-        (fs.started_at + INTERVAL '60 minutes') AS auto_end_time,
         GREATEST(
           0,
           FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
-        )::int AS raw_elapsed_minutes,
-        LEAST(
-          GREATEST(
-            0,
-            FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
-          )::int,
-          60
-        )::int AS elapsed_minutes,
-        GREATEST(
-          0,
-          60 - LEAST(
-            GREATEST(
-              0,
-              FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
-            )::int,
-            60
-          )
-        )::int AS remaining_minutes,
-        (NOW() >= fs.started_at + INTERVAL '60 minutes') AS zombie_limit_reached
+        )::int AS raw_elapsed_minutes
       FROM focus_sessions fs
       JOIN tasks t
         ON t.id = fs.task_id
@@ -104,29 +85,10 @@ export const findActiveFocusSessionById = async (
         t.title AS task_title,
         t.energy_weight,
         t.status AS task_status,
-        (fs.started_at + INTERVAL '60 minutes') AS auto_end_time,
         GREATEST(
           0,
           FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
-        )::int AS raw_elapsed_minutes,
-        LEAST(
-          GREATEST(
-            0,
-            FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
-          )::int,
-          60
-        )::int AS elapsed_minutes,
-        GREATEST(
-          0,
-          60 - LEAST(
-            GREATEST(
-              0,
-              FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
-            )::int,
-            60
-          )
-        )::int AS remaining_minutes,
-        (NOW() >= fs.started_at + INTERVAL '60 minutes') AS zombie_limit_reached
+        )::int AS raw_elapsed_minutes
       FROM focus_sessions fs
       JOIN tasks t
         ON t.id = fs.task_id
@@ -211,20 +173,49 @@ export const markTaskInProgress = async (taskId, identifier, executor = db) => {
 export const finalizeFocusSession = async (
   id,
   identifier,
-  { duration_minutes, end_reason, use_auto_end_time = false },
+  { duration_minutes, end_reason, auto_end_limit_minutes = null },
   executor = db,
 ) => {
   const { field, value } = getIdentifierFilter(identifier);
 
-  const endedAtSql = use_auto_end_time
-    ? "(started_at + INTERVAL '60 minutes')"
-    : "NOW()";
+  // Jika auto_end_limit_minutes ada, gunakan started_at + interval N menit
+  if (Number.isInteger(auto_end_limit_minutes)) {
+    const { rows } = await executor.query(
+      `
+        UPDATE focus_sessions
+        SET
+          ended_at = started_at + ($3::int * INTERVAL '1 minute'),
+          duration_minutes = $1,
+          end_reason = $2,
+          updated_at = NOW()
+        WHERE id = $4
+        AND ${field} = $5
+        AND ended_at IS NULL
+        AND deleted_at IS NULL
+        RETURNING
+          id,
+          user_id,
+          guest_session_id,
+          task_id,
+          started_at,
+          ended_at,
+          duration_minutes,
+          end_reason,
+          created_at,
+          updated_at
+      `,
+      [duration_minutes, end_reason, auto_end_limit_minutes, id, value],
+    );
 
+    return rows[0] || null;
+  }
+
+  // Jika stop manual biasa, pakai NOW()
   const { rows } = await executor.query(
     `
       UPDATE focus_sessions
       SET
-        ended_at = ${endedAtSql},
+        ended_at = NOW(),
         duration_minutes = $1,
         end_reason = $2,
         updated_at = NOW()

@@ -1,4 +1,5 @@
 import * as dashboardRepo from "./dashboard.repository.js";
+import * as energyService from "../energy/energy.service.js";
 
 // HELPER
 const createAppError = (message, status = 400, extra = {}) => {
@@ -17,6 +18,10 @@ const assertIdentifier = (identifier) => {
 // GET ZEN DASHBOARD
 export const getZenDashboard = async (identifier) => {
   assertIdentifier(identifier);
+
+  if (identifier.user_id) {
+    await energyService.ensureDailyResetForUser(identifier.user_id);
+  }
 
   const result = await dashboardRepo.getZenDashboardData(identifier);
 
