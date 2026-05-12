@@ -1,0 +1,226 @@
+{
+  "id": "ae569e1b-4bbb-4150-be40-8cff3aa97fb6",
+  "name": "Bento-Do",
+  "values": [
+    {
+      "key": "base_root",
+      "value": "http://localhost:5000",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/api/v1",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "token_user",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "token_user_2",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "token_guest_migrated",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "user_id_2",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "user_id_guest_migrated",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "guest_session_token",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_2",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_3",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_deadline",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_focus",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_delete",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_done",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_guest_migration",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_due_reminder",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "focus_session_id",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "notification_id",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_focus_b",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_focus_c",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_energy",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_energy_timer",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_energy_dopamine",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "energy_before",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "energy_after",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_life_create",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_life_done",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_life_delete",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_life_focus",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "focus_session_id_life",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "guest_session_token_life",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "task_id_life_guest",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "token_life_guest_migrated",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    },
+    {
+      "key": "user_id_life_guest_migrated",
+      "value": "",
+      "type": "default",
+      "enabled": true
+    }
+  ],
+  "color": null,
+  "_postman_variable_scope": "environment",
+  "_postman_exported_at": "2026-05-12T23:17:13.301Z",
+  "_postman_exported_using": "Postman/12.10.3"
+}
