@@ -1,17 +1,35 @@
 import { Router } from "express";
-import * as ctrl from "./focus.controller.js";
-import { requireAuth } from "../../middlewares/auth.middleware.js";
+
+import * as focusController from "./focus.controller.js";
+import {
+  startFocusSchema,
+  stopFocusSchema,
+  focusSessionIdParamSchema,
+} from "./focus.validation.js";
+
+import { validate } from "../../middlewares/validate.middleware.js";
+import { guestOrAuthMiddleware } from "../../middlewares/guestOrAuth.middleware.js";
 
 const router = Router();
-router.use(requireAuth);
 
-router.post("/sessions", ctrl.validateStartBody, ctrl.startSession);
-router.get("/sessions/active", ctrl.getActiveSession);
-router.get("/sessions", ctrl.validateHistoryQuery, ctrl.getSessionHistory);
-router.get("/sessions/:id", ctrl.validateSessionId, ctrl.getSessionDetail);
-router.put("/sessions/:id/end", ctrl.validateSessionId, ctrl.validateEndBody, ctrl.endSession);
+// GET /api/v1/focus/active
+router.get("/active", guestOrAuthMiddleware, focusController.getActiveFocusSession);
 
-router.get("/statistics", ctrl.getStatistics);
-router.get("/recommended", ctrl.getRecommendedTask);
+// POST /api/v1/focus/start
+router.post(
+  "/start",
+  guestOrAuthMiddleware,
+  validate(startFocusSchema),
+  focusController.startFocusSession,
+);
+
+// POST /api/v1/focus/:id/stop
+router.post(
+  "/:id/stop",
+  guestOrAuthMiddleware,
+  validate(focusSessionIdParamSchema, "params"),
+  validate(stopFocusSchema),
+  focusController.stopFocusSession,
+);
 
 export default router;

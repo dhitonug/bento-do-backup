@@ -1,142 +1,291 @@
 import { db } from "../../config/db.js";
 
-export const createSession = async (userId, taskId, timerDuration) => {
-  const result = await db.query(
-    `INSERT INTO focus_sessions (user_id, task_id, started_at, duration_minutes)
-     VALUES ($1, $2, NOW(), $3)
-     RETURNING *;`,
-    [userId, taskId, timerDuration]
+const MAX_FOCUS_MINUTES = 60;
+
+const getIdentifierFilter = (identifier = {}) => {
+  if (identifier.user_id) {
+    return {
+      field: "user_id",
+      value: identifier.user_id,
+    };
+  }
+
+  if (identifier.guest_session_id) {
+    return {
+      field: "guest_session_id",
+      value: identifier.guest_session_id,
+    };
+  }
+
+  throw new Error("Identifier tidak valid!");
+};
+
+export const findActiveFocusSessionByIdentifier = async (
+  identifier,
+  executor = db,
+) => {
+  const { field, value } = getIdentifierFilter(identifier);
+
+  const { rows } = await executor.query(
+    `
+      SELECT
+        fs.id,
+        fs.user_id,
+        fs.guest_session_id,
+        fs.task_id,
+        fs.started_at,
+        fs.ended_at,
+        fs.duration_minutes,
+        fs.end_reason,
+        fs.created_at,
+        fs.updated_at,
+        t.title AS task_title,
+        t.energy_weight,
+        t.status AS task_status,
+        GREATEST(
+          0,
+          FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
+        )::int AS raw_elapsed_minutes
+      FROM focus_sessions fs
+      JOIN tasks t
+        ON t.id = fs.task_id
+      WHERE fs.${field} = $1
+      AND fs.ended_at IS NULL
+      AND fs.deleted_at IS NULL
+      AND t.deleted_at IS NULL
+      ORDER BY fs.started_at DESC
+      LIMIT 1
+    `,
+    [value],
   );
-  return result.rows[0];
+
+  return rows[0] || null;
 };
 
-export const findActiveSession = async (userId) => {
-  const result = await db.query(
-    `SELECT fs.*, t.title AS task_title, t.energy_weight, t.deadline
-     FROM focus_sessions fs
-     JOIN tasks t ON fs.task_id = t.id
-     WHERE fs.user_id = $1
-       AND fs.ended_at IS NULL
-       AND fs.deleted_at IS NULL
-     ORDER BY fs.started_at DESC
-     LIMIT 1;`,
-    [userId]
+export const findActiveFocusSessionById = async (
+  id,
+  identifier,
+  executor = db,
+) => {
+  const { field, value } = getIdentifierFilter(identifier);
+
+  const { rows } = await executor.query(
+    `
+      SELECT
+        fs.id,
+        fs.user_id,
+        fs.guest_session_id,
+        fs.task_id,
+        fs.started_at,
+        fs.ended_at,
+        fs.duration_minutes,
+        fs.end_reason,
+        fs.created_at,
+        fs.updated_at,
+        t.title AS task_title,
+        t.energy_weight,
+        t.status AS task_status,
+        GREATEST(
+          0,
+          FLOOR(EXTRACT(EPOCH FROM (NOW() - fs.started_at)) / 60)
+        )::int AS raw_elapsed_minutes
+      FROM focus_sessions fs
+      JOIN tasks t
+        ON t.id = fs.task_id
+      WHERE fs.id = $1
+      AND fs.${field} = $2
+      AND fs.ended_at IS NULL
+      AND fs.deleted_at IS NULL
+      AND t.deleted_at IS NULL
+      LIMIT 1
+    `,
+    [id, value],
   );
-  return result.rows[0] ?? null;
+
+  return rows[0] || null;
 };
 
-export const findSessionById = async (sessionId, userId) => {
-  const result = await db.query(
-    `SELECT fs.*, t.title AS task_title, t.energy_weight, t.deadline, t.status AS task_status
-     FROM focus_sessions fs
-     JOIN tasks t ON fs.task_id = t.id
-     WHERE fs.id = $1
-       AND fs.user_id = $2
-       AND fs.deleted_at IS NULL;`,
-    [sessionId, userId]
+export const createFocusSession = async (data, executor = db) => {
+  const { user_id, guest_session_id, task_id } = data;
+
+  const { rows } = await executor.query(
+    `
+      INSERT INTO focus_sessions (
+        user_id,
+        guest_session_id,
+        task_id
+      )
+      VALUES ($1, $2, $3)
+      RETURNING
+        id,
+        user_id,
+        guest_session_id,
+        task_id,
+        started_at,
+        ended_at,
+        duration_minutes,
+        end_reason,
+        created_at,
+        updated_at
+    `,
+    [user_id ?? null, guest_session_id ?? null, task_id],
   );
-  return result.rows[0] ?? null;
+
+  return rows[0];
 };
 
-export const endSession = async (sessionId, userId, endReason) => {
-  const result = await db.query(
-    `UPDATE focus_sessions
-     SET ended_at         = NOW(),
-         duration_minutes = EXTRACT(EPOCH FROM (NOW() - started_at)) / 60,
-         end_reason       = $3,
-         updated_at       = NOW()
-     WHERE id = $1
-       AND user_id = $2
-       AND ended_at IS NULL
-       AND deleted_at IS NULL
-     RETURNING *;`,
-    [sessionId, userId, endReason]
+export const markTaskInProgress = async (taskId, identifier, executor = db) => {
+  const { field, value } = getIdentifierFilter(identifier);
+
+  const { rows } = await executor.query(
+    `
+      UPDATE tasks
+      SET
+        status = CASE
+          WHEN status = 'pending' THEN 'in_progress'
+          ELSE status
+        END,
+        updated_at = NOW()
+      WHERE id = $1
+      AND ${field} = $2
+      AND deleted_at IS NULL
+      RETURNING
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+    `,
+    [taskId, value],
   );
-  return result.rows[0] ?? null;
+
+  return rows[0] || null;
 };
 
-export const findSessionHistory = async (userId, limit, offset, filters = {}) => {
-  const params = [userId];
-  let where = `fs.user_id = $1 AND fs.deleted_at IS NULL AND fs.ended_at IS NOT NULL`;
+export const finalizeFocusSession = async (
+  id,
+  identifier,
+  { duration_minutes, end_reason, auto_end_limit_minutes = null },
+  executor = db,
+) => {
+  const { field, value } = getIdentifierFilter(identifier);
 
-  if (filters.task_id) { params.push(filters.task_id); where += ` AND fs.task_id = $${params.length}`; }
-  if (filters.end_reason) { params.push(filters.end_reason); where += ` AND fs.end_reason = $${params.length}`; }
-  if (filters.from) { params.push(filters.from); where += ` AND fs.started_at >= $${params.length}`; }
-  if (filters.to) { params.push(filters.to); where += ` AND fs.started_at <= $${params.length}`; }
+  // Jika auto_end_limit_minutes ada, gunakan started_at + interval N menit
+  if (Number.isInteger(auto_end_limit_minutes)) {
+    const { rows } = await executor.query(
+      `
+        UPDATE focus_sessions
+        SET
+          ended_at = started_at + ($3::int * INTERVAL '1 minute'),
+          duration_minutes = $1,
+          end_reason = $2,
+          updated_at = NOW()
+        WHERE id = $4
+        AND ${field} = $5
+        AND ended_at IS NULL
+        AND deleted_at IS NULL
+        RETURNING
+          id,
+          user_id,
+          guest_session_id,
+          task_id,
+          started_at,
+          ended_at,
+          duration_minutes,
+          end_reason,
+          created_at,
+          updated_at
+      `,
+      [duration_minutes, end_reason, auto_end_limit_minutes, id, value],
+    );
 
-  const baseParams = [...params];
-  params.push(limit, offset);
+    return rows[0] || null;
+  }
 
-  const [dataResult, countResult] = await Promise.all([
-    db.query(
-      `SELECT fs.id, fs.task_id, t.title AS task_title, t.energy_weight,
-              fs.started_at, fs.ended_at,
-              ROUND(fs.duration_minutes::numeric, 1) AS duration_minutes,
-              fs.end_reason, fs.created_at
-       FROM focus_sessions fs
-       JOIN tasks t ON fs.task_id = t.id
-       WHERE ${where}
-       ORDER BY fs.started_at DESC
-       LIMIT $${params.length - 1} OFFSET $${params.length};`,
-      params
-    ),
-    db.query(`SELECT COUNT(*) FROM focus_sessions fs WHERE ${where};`, baseParams),
-  ]);
-
-  return {
-    data: dataResult.rows,
-    total: parseInt(countResult.rows[0].count, 10),
-  };
-};
-
-export const getStatistics = async (userId) => {
-  const result = await db.query(
-    `SELECT
-       COUNT(*) FILTER (WHERE DATE(fs.started_at) = CURRENT_DATE AND fs.end_reason = 'completed')::int AS sessions_today,
-       COALESCE(SUM(fs.duration_minutes) FILTER (WHERE DATE(fs.started_at) = CURRENT_DATE AND fs.end_reason = 'completed'), 0)::float AS minutes_today,
-       COUNT(*) FILTER (WHERE DATE_TRUNC('week', fs.started_at) = DATE_TRUNC('week', CURRENT_DATE) AND fs.end_reason = 'completed')::int AS sessions_this_week,
-       COALESCE(SUM(fs.duration_minutes) FILTER (WHERE DATE_TRUNC('week', fs.started_at) = DATE_TRUNC('week', CURRENT_DATE) AND fs.end_reason = 'completed'), 0)::float AS minutes_this_week,
-       COUNT(*) FILTER (WHERE fs.end_reason = 'completed')::int AS sessions_all_time,
-       COALESCE(SUM(fs.duration_minutes) FILTER (WHERE fs.end_reason = 'completed'), 0)::float AS minutes_all_time,
-       COUNT(DISTINCT DATE(fs.started_at)) FILTER (WHERE fs.end_reason = 'completed' AND fs.started_at >= CURRENT_DATE - INTERVAL '30 days')::int AS active_days_last_30
-     FROM focus_sessions fs
-     WHERE fs.user_id = $1 AND fs.deleted_at IS NULL AND fs.ended_at IS NOT NULL;`,
-    [userId]
+  // Jika stop manual biasa, pakai NOW()
+  const { rows } = await executor.query(
+    `
+      UPDATE focus_sessions
+      SET
+        ended_at = NOW(),
+        duration_minutes = $1,
+        end_reason = $2,
+        updated_at = NOW()
+      WHERE id = $3
+      AND ${field} = $4
+      AND ended_at IS NULL
+      AND deleted_at IS NULL
+      RETURNING
+        id,
+        user_id,
+        guest_session_id,
+        task_id,
+        started_at,
+        ended_at,
+        duration_minutes,
+        end_reason,
+        created_at,
+        updated_at
+    `,
+    [duration_minutes, end_reason, id, value],
   );
-  return result.rows[0];
+
+  return rows[0] || null;
 };
 
-/**
- * Mengambil daftar tanggal distinct sesi selesai, terurut DESC.
- * Penghitungan streak dilakukan di service layer.
- */
-export const getStreakDays = async (userId) => {
-  const result = await db.query(
-    `SELECT DISTINCT DATE(started_at) AS focus_date
-     FROM focus_sessions
-     WHERE user_id = $1 AND end_reason = 'completed' AND deleted_at IS NULL
-     ORDER BY focus_date DESC;`,
-    [userId]
+export const markTaskAfterFocus = async (
+  taskId,
+  identifier,
+  { duration_minutes, completed },
+  executor = db,
+) => {
+  const { field, value } = getIdentifierFilter(identifier);
+
+  const { rows } = await executor.query(
+    `
+      UPDATE tasks
+      SET
+        used_timer = TRUE,
+        timer_duration = $1,
+        status = CASE
+          WHEN $2 = TRUE THEN 'done'
+          ELSE status
+        END,
+        completed_at = CASE
+          WHEN $2 = TRUE THEN NOW()
+          ELSE completed_at
+        END,
+        updated_at = NOW()
+      WHERE id = $3
+      AND ${field} = $4
+      AND deleted_at IS NULL
+      RETURNING
+        id,
+        user_id,
+        guest_session_id,
+        title,
+        energy_weight,
+        deadline,
+        status,
+        used_timer,
+        timer_duration,
+        source_template,
+        completed_at,
+        created_at,
+        updated_at
+    `,
+    [duration_minutes, completed, taskId, value],
   );
-  return result.rows.map((r) => r.focus_date);
+
+  return rows[0] || null;
 };
 
-export const findRecommendedTask = async (userId) => {
-  const result = await db.query(
-    `SELECT
-       t.id, t.title, t.energy_weight, t.deadline, t.status,
-       COALESCE(SUM(fs.duration_minutes) FILTER (WHERE fs.end_reason = 'completed'), 0)::float AS total_focus_minutes
-     FROM tasks t
-     LEFT JOIN focus_sessions fs ON fs.task_id = t.id AND fs.deleted_at IS NULL AND fs.ended_at IS NOT NULL
-     WHERE t.user_id = $1
-       AND t.status IN ('pending', 'in_progress')
-       AND t.deleted_at IS NULL
-     GROUP BY t.id
-     ORDER BY
-       t.deadline ASC NULLS LAST,
-       CASE t.energy_weight WHEN 'Berat' THEN 1 WHEN 'Sedang' THEN 2 ELSE 3 END ASC
-     LIMIT 1;`,
-    [userId]
-  );
-  return result.rows[0] ?? null;
-};
+export const getMaxFocusMinutes = () => MAX_FOCUS_MINUTES;
