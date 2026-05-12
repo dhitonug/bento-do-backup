@@ -2,6 +2,7 @@ import { db } from "../../config/db.js";
 import * as taskRepo from "../tasks/tasks.repository.js";
 import * as focusRepo from "./focus.repository.js";
 import * as energyService from "../energy/energy.service.js";
+import * as notificationsService from "../notifications/notifications.service.js";
 
 const createAppError = (message, status = 400, extra = {}) => {
   const error = new Error(message);
@@ -196,6 +197,11 @@ export const getActiveFocusSession = async (identifier) => {
         client,
       );
 
+      await notificationsService.syncDeadlineReminderForTask(
+        updatedTask,
+        client,
+      );
+
       const energy = await energyService.handleFocusStopEnergyEffects(
         identifier,
         {
@@ -287,6 +293,11 @@ export const stopFocusSession = async (identifier, sessionId, endReason) => {
         duration_minutes: resolvedDuration,
         completed: resolvedEndReason === "completed",
       },
+      client,
+    );
+
+    await notificationsService.syncDeadlineReminderForTask(
+      updatedTask,
       client,
     );
 

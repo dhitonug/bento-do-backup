@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import * as authRepo from "./auth.repository.js";
 import * as taskRepo from "../tasks/tasks.repository.js";
 import * as guestRepo from "../guest/guest.repository.js";
+import * as notificationsService from "../notifications/notifications.service.js";
 
 import { generateToken } from "../../utils/jwt.js";
 
@@ -33,6 +34,19 @@ const buildAuthResponse = (user, token, migratedTasksCount = 0) => {
   };
 };
 
+const syncDeadlineRemindersForMigratedTasks = async (tasks) => {
+  for (const task of tasks) {
+    try {
+      await notificationsService.syncDeadlineReminderForTask(task);
+    } catch (error) {
+      console.error(
+        "SYNC DEADLINE REMINDER FOR MIGRATED TASK ERROR:",
+        error,
+      );
+    }
+  }
+};
+
 const migrateGuestTasksIfNeeded = async (guestSessionToken, userId) => {
   if (!guestSessionToken) {
     return 0;
@@ -46,6 +60,8 @@ const migrateGuestTasksIfNeeded = async (guestSessionToken, userId) => {
 
   const migratedTasks = await taskRepo.migrateGuestTasksToUser(guest.id, userId);
 
+  await syncDeadlineRemindersForMigratedTasks(migratedTasks);
+
   return migratedTasks.length;
 };
 
@@ -53,31 +69,26 @@ const migrateGuestTasksIfNeeded = async (guestSessionToken, userId) => {
 export const register = async (data) => {
   const normalizedEmail = normalizeEmail(data.email);
 
-  // CEK EMAIL SUDAH DIGUNAKAN
   const existingUser = await authRepo.findUserByEmail(normalizedEmail);
 
   if (existingUser) {
     throw createAppError("Email sudah digunakan!", 409);
   }
 
-  // HASH PASSWORD
   const password_hash = await bcrypt.hash(data.password, 10);
 
   try {
-    // CREATE USER
     const user = await authRepo.createUser({
       email: normalizedEmail,
       password_hash,
       display_name: data.display_name.trim(),
     });
 
-    // MIGRASI TASK GUEST JIKA ADA
     const migratedCount = await migrateGuestTasksIfNeeded(
       data.guest_session_id,
       user.id,
     );
 
-    // GENERATE JWT
     const token = generateToken({
       id: user.id,
       email: user.email,
@@ -85,7 +96,6 @@ export const register = async (data) => {
 
     return buildAuthResponse(user, token, migratedCount);
   } catch (error) {
-    // JAGA-JAGA JIKA KENA UNIQUE CONSTRAINT SAAT RACE CONDITION
     if (error.code === "23505") {
       throw createAppError("Email sudah digunakan!", 409);
     }
@@ -98,27 +108,23 @@ export const register = async (data) => {
 export const login = async ({ email, password, guest_session_id }) => {
   const normalizedEmail = normalizeEmail(email);
 
-  // CARI USER
   const user = await authRepo.findUserByEmail(normalizedEmail);
 
   if (!user) {
     throw createAppError("Email atau password salah!", 401);
   }
 
-  // CEK PASSWORD
   const isMatch = await bcrypt.compare(password, user.password_hash);
 
   if (!isMatch) {
     throw createAppError("Email atau password salah!", 401);
   }
 
-  // MIGRASI TASK GUEST JIKA ADA
   const migratedCount = await migrateGuestTasksIfNeeded(
     guest_session_id,
     user.id,
   );
 
-  // GENERATE JWT
   const token = generateToken({
     id: user.id,
     email: user.email,

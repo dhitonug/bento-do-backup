@@ -1,6 +1,7 @@
 import { db } from "../../config/db.js";
 import * as taskRepo from "./tasks.repository.js";
 import * as energyService from "../energy/energy.service.js";
+import * as notificationsService from "../notifications/notifications.service.js";
 
 // KONSTANTA
 const GUEST_MAX_ACTIVE_TASKS = 3;
@@ -54,7 +55,24 @@ export const createTask = async (data) => {
     }
   }
 
-  return await taskRepo.createTask(data);
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const task = await taskRepo.createTask(data, client);
+
+    await notificationsService.syncDeadlineReminderForTask(task, client);
+
+    await client.query("COMMIT");
+
+    return task;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 // GET ALL TASKS WITH PAGINATION
@@ -148,6 +166,8 @@ export const updateTask = async (id, identifier, data) => {
       }
     }
 
+    await notificationsService.syncDeadlineReminderForTask(updatedTask, client);
+
     await client.query("COMMIT");
 
     return {
@@ -166,17 +186,38 @@ export const updateTask = async (id, identifier, data) => {
 export const deleteTask = async (id, identifier) => {
   assertIdentifier(identifier);
 
-  const existing = await taskRepo.getTaskById(id, identifier);
+  const client = await db.connect();
 
-  if (!existing) {
-    throw createAppError("Tugas tidak ditemukan!", 404);
+  try {
+    await client.query("BEGIN");
+
+    const existing = await taskRepo.getTaskById(id, identifier, client);
+
+    if (!existing) {
+      throw createAppError("Tugas tidak ditemukan!", 404);
+    }
+
+    const deletedTask = await taskRepo.deleteTask(id, identifier, client);
+
+    if (!deletedTask) {
+      throw createAppError("Gagal menghapus tugas!", 400);
+    }
+
+    if (existing.user_id) {
+      await notificationsService.removeDeadlineReminderByTask(
+        existing.id,
+        existing.user_id,
+        client,
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return deletedTask;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  const deletedTask = await taskRepo.deleteTask(id, identifier);
-
-  if (!deletedTask) {
-    throw createAppError("Gagal menghapus tugas!", 400);
-  }
-
-  return deletedTask;
 };

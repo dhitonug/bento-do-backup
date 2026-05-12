@@ -1,81 +1,316 @@
 import { db } from "../../config/db.js";
 
-export const findUserNotifications = async (userId, limit, offset, isRead) => {
-  let query = `
-    SELECT * FROM notifications 
-    WHERE user_id = $1 AND deleted_at IS NULL
-  `;
-  const params = [userId];
+const notificationColumns = `
+  id,
+  user_id,
+  task_id,
+  message,
+  type,
+  scheduled_at,
+  sent_at,
+  is_read,
+  created_at,
+  updated_at
+`;
 
-  if (isRead !== undefined) {
-    params.push(isRead);
-    query += ` AND is_read = $${params.length}`;
+const buildVisibleNotificationsWhere = ({ isRead, type }) => {
+  const whereClauses = [
+    "user_id = $1",
+    "deleted_at IS NULL",
+    "scheduled_at <= NOW()",
+  ];
+
+  const extraParams = [];
+
+  if (typeof isRead === "boolean") {
+    extraParams.push(isRead);
+    whereClauses.push(`is_read = $${extraParams.length + 1}`);
   }
 
-  query += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
-  params.push(limit, offset);
-
-  const result = await db.query(query, params);
-
-  let countQuery = `SELECT COUNT(*) FROM notifications WHERE user_id = $1 AND deleted_at IS NULL`;
-  const countParams = [userId];
-  if (isRead !== undefined) {
-    countParams.push(isRead);
-    countQuery += ` AND is_read = $${countParams.length}`;
+  if (type) {
+    extraParams.push(type);
+    whereClauses.push(`type = $${extraParams.length + 1}`);
   }
-  const countResult = await db.query(countQuery, countParams);
 
   return {
-    data: result.rows,
-    total: parseInt(countResult.rows[0].count, 10),
+    whereClauses,
+    extraParams,
   };
 };
 
-export const markAsRead = async (notificationId, userId) => {
-  const query = `
-    UPDATE notifications 
-    SET is_read = TRUE, updated_at = NOW() 
-    WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-    RETURNING *;
-  `;
-  const result = await db.query(query, [notificationId, userId]);
-  return result.rows[0];
+export const findUserNotifications = async (
+  userId,
+  { limit, offset, isRead, type },
+  executor = db,
+) => {
+  const { whereClauses, extraParams } = buildVisibleNotificationsWhere({
+    isRead,
+    type,
+  });
+
+  const baseParams = [userId, ...extraParams];
+
+  const listParams = [...baseParams, limit, offset];
+  const limitParam = `$${listParams.length - 1}`;
+  const offsetParam = `$${listParams.length}`;
+
+  const { rows } = await executor.query(
+    `
+      SELECT
+        ${notificationColumns}
+      FROM notifications
+      WHERE ${whereClauses.join(" AND ")}
+      ORDER BY
+        COALESCE(sent_at, scheduled_at) DESC,
+        created_at DESC
+      LIMIT ${limitParam}
+      OFFSET ${offsetParam}
+    `,
+    listParams,
+  );
+
+  const countResult = await executor.query(
+    `
+      SELECT COUNT(*)::int AS total_items
+      FROM notifications
+      WHERE ${whereClauses.join(" AND ")}
+    `,
+    baseParams,
+  );
+
+  return {
+    data: rows,
+    total_items: countResult.rows[0]?.total_items ?? 0,
+  };
 };
 
-export const markAllAsRead = async (userId) => {
-  const query = `
-    UPDATE notifications 
-    SET is_read = TRUE, updated_at = NOW() 
-    WHERE user_id = $1 AND is_read = FALSE AND deleted_at IS NULL
-    RETURNING id;
-  `;
-  const result = await db.query(query, [userId]);
-  return result.rows;
+export const countUnreadVisibleNotifications = async (
+  userId,
+  executor = db,
+) => {
+  const { rows } = await executor.query(
+    `
+      SELECT COUNT(*)::int AS unread_count
+      FROM notifications
+      WHERE user_id = $1
+      AND deleted_at IS NULL
+      AND scheduled_at <= NOW()
+      AND is_read = FALSE
+    `,
+    [userId],
+  );
+
+  return rows[0]?.unread_count ?? 0;
 };
 
-export const softDeleteNotification = async (notificationId, userId) => {
-  const query = `
-    UPDATE notifications 
-    SET deleted_at = NOW(), updated_at = NOW() 
-    WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
-    RETURNING *;
-  `;
-  const result = await db.query(query, [notificationId, userId]);
-  return result.rows[0];
+export const markAsRead = async (notificationId, userId, executor = db) => {
+  const { rows } = await executor.query(
+    `
+      UPDATE notifications
+      SET
+        is_read = TRUE,
+        updated_at = NOW()
+      WHERE id = $1
+      AND user_id = $2
+      AND deleted_at IS NULL
+      RETURNING
+        ${notificationColumns}
+    `,
+    [notificationId, userId],
+  );
+
+  return rows[0] || null;
+};
+
+export const markAllAsRead = async (userId, executor = db) => {
+  const { rows } = await executor.query(
+    `
+      UPDATE notifications
+      SET
+        is_read = TRUE,
+        updated_at = NOW()
+      WHERE user_id = $1
+      AND deleted_at IS NULL
+      AND scheduled_at <= NOW()
+      AND is_read = FALSE
+      RETURNING id
+    `,
+    [userId],
+  );
+
+  return rows;
+};
+
+export const softDeleteNotification = async (
+  notificationId,
+  userId,
+  executor = db,
+) => {
+  const { rows } = await executor.query(
+    `
+      UPDATE notifications
+      SET
+        deleted_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+      AND user_id = $2
+      AND deleted_at IS NULL
+      RETURNING
+        ${notificationColumns}
+    `,
+    [notificationId, userId],
+  );
+
+  return rows[0] || null;
 };
 
 export const createNotification = async (
-  userId,
-  taskId,
-  message,
-  type,
-  scheduledAt = new Date()
+  {
+    user_id,
+    task_id,
+    message,
+    type,
+    scheduled_at,
+    sent_at = null,
+  },
+  executor = db,
 ) => {
-  const query = `
-    INSERT INTO notifications (user_id, task_id, message, type, scheduled_at)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING *;
-  `;
-  const result = await db.query(query, [userId, taskId, message, type, scheduledAt]);
-  return result.rows[0];
+  const { rows } = await executor.query(
+    `
+      INSERT INTO notifications (
+        user_id,
+        task_id,
+        message,
+        type,
+        scheduled_at,
+        sent_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING
+        ${notificationColumns}
+    `,
+    [user_id, task_id, message, type, scheduled_at, sent_at],
+  );
+
+  return rows[0];
+};
+
+export const findDueUnsentNotifications = async (
+  limit = 50,
+  executor = db,
+) => {
+  const { rows } = await executor.query(
+    `
+      SELECT
+        ${notificationColumns}
+      FROM notifications
+      WHERE deleted_at IS NULL
+      AND sent_at IS NULL
+      AND scheduled_at <= NOW()
+      ORDER BY scheduled_at ASC, created_at ASC
+      LIMIT $1
+    `,
+    [limit],
+  );
+
+  return rows;
+};
+
+export const markNotificationAsSent = async (
+  notificationId,
+  executor = db,
+) => {
+  const { rows } = await executor.query(
+    `
+      UPDATE notifications
+      SET
+        sent_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+      AND deleted_at IS NULL
+      RETURNING
+        ${notificationColumns}
+    `,
+    [notificationId],
+  );
+
+  return rows[0] || null;
+};
+
+export const findActiveNotificationByTaskAndType = async (
+  taskId,
+  userId,
+  type,
+  executor = db,
+) => {
+  const { rows } = await executor.query(
+    `
+      SELECT
+        ${notificationColumns}
+      FROM notifications
+      WHERE task_id = $1
+      AND user_id = $2
+      AND type = $3
+      AND deleted_at IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+    `,
+    [taskId, userId, type],
+  );
+
+  return rows[0] || null;
+};
+
+export const updateNotification = async (
+  notificationId,
+  {
+    message,
+    scheduled_at,
+    sent_at = null,
+    is_read = false,
+  },
+  executor = db,
+) => {
+  const { rows } = await executor.query(
+    `
+      UPDATE notifications
+      SET
+        message = $2,
+        scheduled_at = $3,
+        sent_at = $4,
+        is_read = $5,
+        updated_at = NOW()
+      WHERE id = $1
+      AND deleted_at IS NULL
+      RETURNING
+        ${notificationColumns}
+    `,
+    [notificationId, message, scheduled_at, sent_at, is_read],
+  );
+
+  return rows[0] || null;
+};
+
+export const softDeleteNotificationsByTaskAndType = async (
+  taskId,
+  userId,
+  type,
+  executor = db,
+) => {
+  const { rows } = await executor.query(
+    `
+      UPDATE notifications
+      SET
+        deleted_at = NOW(),
+        updated_at = NOW()
+      WHERE task_id = $1
+      AND user_id = $2
+      AND type = $3
+      AND deleted_at IS NULL
+      RETURNING id
+    `,
+    [taskId, userId, type],
+  );
+
+  return rows;
 };
