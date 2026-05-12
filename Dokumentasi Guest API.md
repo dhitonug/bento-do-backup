@@ -1,367 +1,334 @@
-# Dokumentasi REST API - Guest
 
-Stack yang digunakan:
+# 👤 Dokumentasi REST API — Guest Bento-do
 
-- Express.js v5
-- PostgreSQL
-- UUID
-- Zod
+> Stack: Express.js · PostgreSQL (Neon) · UUID · Zod · JWT · Guest Session Token
 
 ---
 
-# 📚 Daftar Isi
+## 📚 Daftar Isi
 
-- [1. Struktur Folder](#1-struktur-folder)
-- [2. Environment Variables](#2-environment-variables)
-- [3. Database Schema](#3-database-schema)
-- [4. Guest Session - Cara Kerja](#4-guest-session---cara-kerja)
-  - [4.1 Konsep Guest Session](#41-konsep-guest-session)
-  - [4.2 Alur Guest Session](#42-alur-guest-session)
-  - [4.3 Keamanan Guest Session](#43-keamanan-guest-session)
-- [5. Middleware](#5-middleware)
-  - [5.1 guestOrAuth Middleware](#51-guestorauth-middleware)
-- [6. Setup Postman](#6-setup-postman)
-- [7. API Reference](#7-api-reference)
-  - [POST /guest](#post-guest)
-- [8. Testing dengan Collection Runner](#8-testing-dengan-collection-runner)
+1. [Overview](#1-overview)
+2. [Tujuan Guest Mode](#2-tujuan-guest-mode)
+3. [Struktur Folder](#3-struktur-folder)
+4. [Cara Kerja Guest Session](#4-cara-kerja-guest-session)
+   - [4.1 Membuat Guest Session](#41-membuat-guest-session)
+   - [4.2 Menggunakan Guest Token](#42-menggunakan-guest-token)
+   - [4.3 Guest Login Wall](#43-guest-login-wall)
+   - [4.4 Migrasi Guest ke User](#44-migrasi-guest-ke-user)
+5. [Setup Postman](#5-setup-postman)
+6. [API Reference](#6-api-reference)
+   - [6.1 Create Guest Session](#61-create-guest-session)
+7. [Flow Guest Mode Lengkap](#7-flow-guest-mode-lengkap)
+8. [Status Code yang Umum Dipakai](#8-status-code-yang-umum-dipakai)
+9. [Catatan Penting](#9-catatan-penting)
 
 ---
 
-# 1. Struktur Folder
+## 1. Overview
 
-```bash
-.
-├── .env
-├── .env.example
-├── db.sql
-├── package.json
-└── src/
-    ├── server.js
-    ├── app.js
-    │
-    ├── config/
-    │   └── db.js
-    │
-    ├── middlewares/
-    │   ├── auth.middleware.js
-    │   ├── error.middleware.js
-    │   ├── guestOrAuth.middleware.js
-    │   ├── loginWall.middleware.js
-    │   └── validate.middleware.js
-    │
-    ├── modules/
-    │   ├── auth/
-    │   │   ├── auth.controller.js
-    │   │   ├── auth.service.js
-    │   │   ├── auth.repository.js
-    │   │   ├── auth.routes.js
-    │   │   └── auth.validation.js
-    │   │
-    │   ├── guest/
-    │   │   ├── guest.controller.js
-    │   │   ├── guest.service.js
-    │   │   ├── guest.repository.js
-    │   │   └── guest.routes.js
-    │   │
-    │   └── tasks/
-    │       ├── tasks.controller.js
-    │       ├── tasks.service.js
-    │       ├── tasks.repository.js
-    │       ├── tasks.routes.js
-    │       └── tasks.validation.js
-    │
-    └── utils/
-        └── jwt.js
+Guest Mode adalah salah satu fitur inti Bento-do agar user bisa langsung mencoba aplikasi tanpa harus register di awal. ✨
+
+Dengan Guest Mode, user dapat:
+- membuat session guest
+- membuat beberapa task awal
+- mencoba dashboard awal
+- merasakan flow aplikasi tanpa hambatan registrasi
+
+Guest Mode dirancang untuk mendukung konsep **frictionless entry**, lalu baru diarahkan ke login/register saat user sudah mulai benar-benar menggunakan sistem.
+
+Base URL lokal untuk guest module:
+
+```text id="kpvk0n"
+http://localhost:5000/api/v1/guest
+````
+
+---
+
+## 2. Tujuan Guest Mode
+
+Guest Mode dibuat agar user:
+
+* 🚀 bisa langsung masuk aplikasi tanpa onboarding berat
+* 📝 bisa mulai menulis task secepat mungkin
+* 🧠 tidak kehilangan momentum saat ingin “brain dump”
+* 🔐 baru diminta login saat menyentuh batas guest / fitur tertentu
+
+Dalam Bento-do, guest bukan akun penuh.
+Guest hanya punya **session sementara** yang diwakili oleh:
+
+```text id="0p4i0f"
+x-guest-session-token
 ```
 
 ---
 
-# 2. Environment Variables
+## 3. Struktur Folder
 
-Isi file `.env` dengan konfigurasi berikut:
-
-```env
-PORT=5000
-DATABASE_URL=postgresql://user:password@host:5432/bento_db
+```text id="t1wyd8"
+src/
+├── middlewares/
+│   ├── guestOrAuth.middleware.js
+│   └── loginWall.middleware.js
+├── modules/
+│   └── guest/
+│       ├── guest.controller.js
+│       ├── guest.service.js
+│       ├── guest.repository.js
+│       ├── guest.routes.js
+│       └── guest.validation.js
+└── modules/
+    ├── tasks/
+    ├── dashboard/
+    ├── templates/
+    └── auth/
 ```
 
-| Variable | Contoh | Keterangan |
-|----------|---------|-------------|
-| `PORT` | `5000` | Port server |
-| `DATABASE_URL` | `postgresql://...` | Connection string PostgreSQL |
+> Catatan: secara arsitektur, Guest Mode tidak hanya hidup di `guest/`, tetapi juga dipakai oleh:
+>
+> * `tasks`
+> * `dashboard`
+> * `templates`
+> * `auth`
+>   melalui middleware dan logic migration.
 
 ---
 
-# 3. Database Schema
+## 4. Cara Kerja Guest Session
 
-## Tabel `guest_sessions`
+### 4.1 Membuat Guest Session
 
-```sql
-CREATE TABLE guest_sessions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  session_token VARCHAR(255) UNIQUE NOT NULL,
+Saat client memanggil endpoint:
 
-  synced_at TIMESTAMP NULL,
-
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  deleted_at TIMESTAMP NULL
-);
+```text id="dyrcbx"
+POST /api/v1/guest
 ```
 
-| Kolom | Tipe | Keterangan |
-|------|------|-------------|
-| `id` | UUID | Primary key internal |
-| `session_token` | VARCHAR(255) | Token yang dikirim ke client |
-| `synced_at` | TIMESTAMP | Waktu sinkronisasi ke user |
-| `created_at` | TIMESTAMP | Waktu session dibuat |
-| `updated_at` | TIMESTAMP | Waktu update terakhir |
-| `deleted_at` | TIMESTAMP NULL | Soft delete |
+backend akan membuat session guest baru dan mengembalikan token session.
 
-> ⚠️ `id` digunakan sebagai identifier internal database.  
-> Sedangkan `session_token` adalah token yang dikirim ke client.
-
-Task akan menyimpan `guest_sessions.id`, bukan `session_token`.
+Token ini kemudian dipakai untuk request-request berikutnya.
 
 ---
 
-# 4. Guest Session - Cara Kerja
+### 4.2 Menggunakan Guest Token
 
-## 4.1 Konsep Guest Session
+Setelah guest session dibuat, token harus dikirim di header:
 
-Guest session memungkinkan pengguna menggunakan aplikasi tanpa harus registrasi terlebih dahulu.
-
-Session dibuat menggunakan UUID token yang berfungsi sebagai identitas sementara.
-
-```js
-// guest.service.js
-
-const session_token = uuidv4();
-
-const session =
-  await guestRepo.createGuestSession(
-    session_token
-  );
+```text id="6jlwmq"
+x-guest-session-token: <guest_session_token>
 ```
 
----
+Header ini dipakai pada endpoint yang mendukung guest, misalnya:
 
-## Filosofi Guest Mode
-
-Konsep ini menggunakan pendekatan:
-
-> Product-Led Growth
-
-User diberikan kesempatan mencoba produk terlebih dahulu sebelum diminta membuat akun.
+* create task
+* dashboard guest
+* flow migrasi guest → user
 
 ---
 
-## 4.2 Alur Guest Session
+### 4.3 Guest Login Wall
 
-1. Client melakukan `POST /guest`
-2. Server membuat guest session baru
-3. Session disimpan ke database
-4. Server mengembalikan `session_token`
-5. Client menggunakan token pada header:
+Guest tidak memiliki akses tak terbatas.
 
-```http
-x-guest-session-token: token
+Business rule utama:
+
+* guest hanya boleh punya maksimal **3 task aktif**
+* saat mencoba membuat task ke-4, backend akan memblokir request dan meminta user login/register
+
+Response yang diharapkan:
+
+```json id="shhq1b"
+{
+  "success": false,
+  "message": "Batas guest telah tercapai. Silakan login atau register untuk menambah tugas lagi.",
+  "require_login": true,
+  "code": "GUEST_TASK_LIMIT_REACHED"
+}
 ```
 
-6. Token valid sampai guest melakukan register atau login
+Selain batas task, beberapa fitur juga dilindungi oleh **login wall**, misalnya:
+
+* apply templates
+* fitur yang memang khusus user terdaftar
 
 ---
 
-## 4.3 Keamanan Guest Session
+### 4.4 Migrasi Guest ke User
 
-Beberapa alasan guest session tetap aman:
+Kalau guest sudah membuat task lalu memutuskan register/login, task guest bisa dipindahkan ke akun user.
 
-- UUID bersifat random 128-bit
-- Sulit ditebak oleh attacker
-- Client tidak mengetahui `id` internal database
-- Data guest terisolasi dari data user lain
+Flow migration:
 
----
+1. guest membuat session
+2. guest membuat task
+3. client mengirim register/login dengan header guest token
+4. backend mencari guest session
+5. backend memindahkan task guest ke `user_id` user baru / user login
+6. jumlah task yang dipindahkan dikembalikan di response auth
 
-# 5. Middleware
+Header yang dipakai:
 
-## 5.1 `guestOrAuth` Middleware
+```text id="elax08"
+x-guest-session-token: <guest_session_token>
+```
 
-Middleware ini mendukung dua metode autentikasi:
+Contoh field migration result:
 
-1. JWT Authentication
-2. Guest Session Authentication
-
-```js
-if (authHeader) {
-  // Verifikasi JWT
-  // Set req.identity sebagai user
-} else if (guestToken) {
-  // Cari guest session
-  // Set req.identity sebagai guest
-} else {
-  // Unauthorized
+```json id="jqqjlwm"
+{
+  "migrated_tasks_count": 1
 }
 ```
 
 ---
 
-## Identity Guest
+## 5. Setup Postman
 
-```js
-req.identity = {
-  type: "guest",
-  user_id: null,
-  guest_session_id: "uuid",
-};
+### 5.1 Environment
+
+Tambahkan variable berikut di Postman environment:
+
+```text id="c1qtw1"
+base_url = http://localhost:5000/api/v1
+guest_session_token =
+token_user =
+user_id =
 ```
 
 ---
 
-# 6. Setup Postman
+### 5.2 Auto Save Guest Token
 
-## Environment Variables
+Di request `POST /guest`, tempel script ini di tab **Tests**:
 
-| Variable | Initial Value | Current Value |
-|----------|----------------|----------------|
-| `BASE_URL` | `http://localhost:5000/api/v1` | `http://localhost:5000/api/v1` |
-| `GUEST_TOKEN` | *(kosong)* | *(otomatis terisi)* |
-
----
-
-## Auto Simpan Guest Token
-
-Tambahkan script berikut pada tab **Tests** di request `POST /guest`.
-
-```js
+```javascript id="egjlwm"
 const json = pm.response.json();
 
-pm.environment.set(
-  "GUEST_TOKEN",
-  json.data.session_token
-);
+pm.environment.set("guest_session_token", json.data.session_token);
 ```
 
 ---
 
-## Mengirim Guest Token
+### 5.3 Mengirim Guest Token
 
-```http
-x-guest-session-token: {{GUEST_TOKEN}}
+Untuk endpoint guest-enabled, isi header:
+
+```text id="jlwm05"
+x-guest-session-token: {{guest_session_token}}
 ```
 
 ---
 
-# 7. API Reference
-
-## Base URL
-
-```text
-http://localhost:5000/api/v1
-```
+## 6. API Reference
 
 ---
 
-# POST `/guest`
+## 6.1 Create Guest Session
 
-Digunakan untuk membuat guest session baru.
+### `POST /api/v1/guest`
 
----
-
-## Request
-
-### Method
-
-```http
-POST
-```
-
-### Endpoint
-
-```http
-/guest
-```
+Membuat guest session baru.
 
 ### Headers
 
-```text
-Tidak ada
-```
+Tidak perlu header khusus.
 
 ### Body
 
-```text
-Tidak ada
-```
+Tidak perlu body.
 
----
+### Response `201`
 
-## Response Success — `201 Created`
-
-```json
+```json id="jlwm07"
 {
   "success": true,
   "message": "Guest session berhasil dibuat.",
   "data": {
-    "guest_session_id": "550e8400-e29b-41d4-a716-446655440000",
-    "session_token": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
-    "created_at": "2026-05-08T00:00:00.000Z"
+    "session_token": "guest-session-token"
   }
 }
 ```
 
----
-
-## Response Code
-
-| Status Code | Keterangan |
-|-------------|-------------|
-| `201` | Guest session berhasil dibuat |
-| `500` | Terjadi kesalahan pada server |
+> Pada implementasi tertentu, response juga bisa menyertakan metadata guest tambahan.
+> Yang paling penting untuk client adalah `session_token`.
 
 ---
 
-## Cara Menggunakan Guest Session
+## 7. Flow Guest Mode Lengkap
 
-1. Kirim request `POST /guest`
-2. Ambil `session_token`
-3. Gunakan token pada header:
-
-```http
-x-guest-session-token: token
+```text id="jjlwm08"
+1. Client kirim POST /api/v1/guest
+        ↓
+2. Backend membuat guest session
+        ↓
+3. Backend mengembalikan session_token
+        ↓
+4. Client menyimpan session_token di environment/state
+        ↓
+5. Client membuat task guest dengan header x-guest-session-token
+        ↓
+6. Backend menyimpan task dengan guest_session_id
+        ↓
+7. Jika guest membuat task ke-4 → login wall aktif
+        ↓
+8. Jika guest register/login:
+   - client kirim x-guest-session-token
+   - backend migrasikan task guest ke user
+        ↓
+9. Guest berubah menjadi user terdaftar
 ```
 
-4. Gunakan token tersebut untuk endpoint tasks
-5. Token valid sampai guest register atau login
+---
+
+## 8. Status Code yang Umum Dipakai
+
+| Status Code | Arti                                                       |
+| ----------- | ---------------------------------------------------------- |
+| `201`       | Guest session berhasil dibuat                              |
+| `400`       | Request guest tidak valid                                  |
+| `401`       | Token guest tidak ada / tidak valid pada endpoint tertentu |
+| `403`       | Guest diblok oleh login wall / batas guest tercapai        |
 
 ---
 
-# 8. Testing dengan Collection Runner
+## 9. Catatan Penting
 
-## Folder
+### ✅ Yang sudah diverifikasi saat testing
 
-```text
-1. GUEST MODE
+* Guest session berhasil dibuat
+* `guest_session_token` berhasil disimpan dan dipakai
+* Guest bisa membuat task 1–3
+* Guest diblok saat membuat task ke-4
+* Guest bisa masuk ke flow dashboard tertentu
+* Guest task berhasil dimigrasikan ke user saat register
+* `migrated_tasks_count` muncul di response auth
+
+### ⚠️ Catatan implementasi
+
+* Guest Mode memakai **header token**, bukan JWT
+* Header utama guest adalah:
+
+```text id="rjlwm0"
+x-guest-session-token: <guest_session_token>
 ```
 
-| No | Request | Ekspektasi |
-|----|----------|-------------|
-| 1 | `POST /guest` | `201`, mendapatkan `session_token` |
-| 2 | `POST /tasks` sebagai guest | `201`, membuat task Ringan |
-| 3 | `POST /tasks` sebagai guest | `201`, membuat task Sedang |
-| 4 | `POST /tasks` sebagai guest | `201`, membuat task Berat |
-| 5 | `GET /tasks?page=1&limit=3` | `200`, maksimal 3 item |
-| 6 | `GET /tasks/:id` | `200`, detail task |
-| 7 | `PUT /tasks/:id` status done | `200`, status berhasil diupdate |
-| 8 | `DELETE /tasks/:id` | `200`, soft delete berhasil |
+* Guest bukan user penuh, jadi beberapa fitur akan diblok oleh login wall
+* Migrasi guest diverifikasi berhasil saat register menggunakan header guest token
 
----
+### 🧪 Folder Postman terkait guest
 
-# ✅ Catatan
+```text id="zjlwm0"
+02 - Guest Mode & Login Wall
+├── 02.1 - Create Guest Session
+├── 02.2 - Guest Create Task 1
+├── 02.3 - Guest Create Task 2
+├── 02.4 - Guest Create Task 3
+├── 02.5 - Guest Create Task 4 - Should Block
+└── 02.6 - Guest Dashboard Zen
+```
 
-- Guest tidak perlu registrasi
-- Session menggunakan UUID random
-- Token guest disimpan di header request
-- Data guest tetap terisolasi
-- Guest dapat menggunakan seluruh fitur task
-- Data guest dapat dipindahkan ke user saat register/login
+### ✅ Status akhir
+
+Module **Guest Mode** sudah diuji dan **pass** dalam full integration testing.
+
+
+

@@ -1,428 +1,315 @@
-# Dokumentasi REST API - Authentication
+# 🔐 Dokumentasi REST API — Auth Bento-do
 
-Stack yang digunakan:
-
-- Express.js v5
-- PostgreSQL
-- JWT
-- Bcrypt
-- Zod
-- CORS
-- Helmet
-- XSS Sanitizer
+> Stack: Express.js · PostgreSQL (Neon) · JWT · Bcrypt · Zod · CORS · Helmet · Cookie Parser · XSS Sanitizer
 
 ---
 
-# 📚 Daftar Isi
+## 📚 Daftar Isi
 
-- [1. Struktur Folder](#1-struktur-folder)
-- [2. Environment Variables](#2-environment-variables)
-- [3. Database Schema](#3-database-schema)
-- [4. Auth - Cara Kerja](#4-auth---cara-kerja)
-  - [4.1 Bcrypt - Hash Password](#41-bcrypt---hash-password)
-  - [4.2 JWT - Access Token](#42-jwt---access-token)
-  - [4.3 Auto Sync Guest ke User](#43-auto-sync-guest-ke-user)
-- [5. Middleware](#5-middleware)
-  - [5.1 guestOrAuth Middleware](#51-guestorauth-middleware)
-  - [5.2 validate Middleware](#52-validate-middleware)
-- [6. Setup Postman](#6-setup-postman)
-- [7. API Reference](#7-api-reference)
-  - [POST /auth/register](#post-authregister)
-  - [POST /auth/login](#post-authlogin)
-- [8. Alur Lengkap](#8-alur-lengkap)
-- [9. Testing dengan Collection Runner](#9-testing-dengan-collection-runner)
+1. [Overview](#1-overview)
+2. [Struktur Folder](#2-struktur-folder)
+3. [Environment Variables](#3-environment-variables)
+4. [Auth — Cara Kerja](#4-auth--cara-kerja)
+   - [4.1 Register](#41-register)
+   - [4.2 Login](#42-login)
+   - [4.3 JWT Token](#43-jwt-token)
+   - [4.4 Auth Middleware](#44-auth-middleware)
+   - [4.5 Guest Migration](#45-guest-migration)
+5. [Setup Postman](#5-setup-postman)
+6. [API Reference](#6-api-reference)
+   - [6.1 Register](#61-register)
+   - [6.2 Login](#62-login)
+7. [Alur Lengkap Auth](#7-alur-lengkap-auth)
+8. [Status Code yang Umum Dipakai](#8-status-code-yang-umum-dipakai)
+9. [Catatan Penting](#9-catatan-penting)
 
 ---
 
-# 1. Struktur Folder
+## 1. Overview
 
-```bash
-.
-├── .env
-├── .env.example
-├── db.sql
-├── package.json
-└── src/
-    ├── server.js
-    ├── app.js
-    │
-    ├── config/
-    │   └── db.js
-    │
-    ├── middlewares/
-    │   ├── auth.middleware.js
-    │   ├── error.middleware.js
-    │   ├── guestOrAuth.middleware.js
-    │   ├── loginWall.middleware.js
-    │   └── validate.middleware.js
-    │
-    ├── modules/
-    │   ├── auth/
-    │   │   ├── auth.controller.js
-    │   │   ├── auth.service.js
-    │   │   ├── auth.repository.js
-    │   │   ├── auth.routes.js
-    │   │   └── auth.validation.js
-    │   │
-    │   ├── guest/
-    │   │   ├── guest.controller.js
-    │   │   ├── guest.service.js
-    │   │   ├── guest.repository.js
-    │   │   └── guest.routes.js
-    │   │
-    │   └── tasks/
-    │       ├── tasks.controller.js
-    │       ├── tasks.service.js
-    │       ├── tasks.repository.js
-    │       ├── tasks.routes.js
-    │       └── tasks.validation.js
-    │
-    └── utils/
-        └── jwt.js
+Module Auth Bento-do bertugas untuk:
+
+- 📝 mendaftarkan user baru
+- 🔑 login user lama
+- 🪪 menghasilkan JWT token
+- 🔄 memigrasikan task guest ke akun user saat register/login
+- 🛡️ melindungi endpoint private dengan Bearer Token
+
+Bento-do menggunakan pendekatan **JWT di response body**, lalu token dikirim ulang oleh client lewat header:
+
+```text
+Authorization: Bearer <token>
 ````
 
+Base URL lokal:
+
+```text
+http://localhost:5000/api/v1/auth
+```
+
 ---
 
-# 2. Environment Variables
+## 2. Struktur Folder
 
-Salin file `.env.example` menjadi `.env`, lalu isi nilainya.
+```text
+src/
+├── middlewares/
+│   └── auth.middleware.js
+├── modules/
+│   └── auth/
+│       ├── auth.controller.js
+│       ├── auth.service.js
+│       ├── auth.repository.js
+│       ├── auth.routes.js
+│       └── auth.validation.js
+└── utils/
+    └── jwt.js
+```
+
+---
+
+## 3. Environment Variables
+
+Salin `.env.example` ke `.env`, lalu isi minimal seperti ini:
 
 ```env
 PORT=5000
-DATABASE_URL=postgresql://user:password@host:5432/bento_db
-JWT_SECRET=ganti_dengan_string_random_panjang
+DATABASE_URL=your_neon_database_url
+JWT_SECRET=your_super_secret_key
+JWT_EXPIRES=7d
+CLIENT_ORIGINS=http://localhost:5173
+DB_SSL=true
+DB_POOL_MAX=10
+DB_IDLE_TIMEOUT_MS=30000
+DB_CONNECTION_TIMEOUT_MS=10000
 ```
 
-| Variable       | Contoh                 | Keterangan                   |
-| -------------- | ---------------------- | ---------------------------- |
-| `PORT`         | `5000`                 | Port server                  |
-| `DATABASE_URL` | `postgresql://...`     | Connection string PostgreSQL |
-| `JWT_SECRET`   | `random-secret-string` | Secret key untuk JWT         |
-
-> ⚠️ Jangan pernah commit file `.env` ke GitHub.
+> ⚠️ Jangan commit file `.env` ke GitHub.
 
 ---
 
-# 3. Database Schema
+## 4. Auth — Cara Kerja
 
-## Tabel `users`
+### 4.1 Register
 
-```sql
-CREATE TABLE users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  display_name VARCHAR(100),
+Saat user register:
 
-  max_energy INTEGER DEFAULT 240,
-  current_energy INTEGER DEFAULT 240,
-  energy_reset_at TIMESTAMP DEFAULT NOW(),
-
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  deleted_at TIMESTAMP NULL
-);
-```
-
-| Kolom             | Tipe           | Keterangan                  |
-| ----------------- | -------------- | --------------------------- |
-| `id`              | UUID           | Primary key                 |
-| `email`           | VARCHAR(255)   | Email unik user             |
-| `password_hash`   | VARCHAR(255)   | Password yang sudah di-hash |
-| `display_name`    | VARCHAR(100)   | Nama tampilan user          |
-| `max_energy`      | INTEGER        | Maksimal energi             |
-| `current_energy`  | INTEGER        | Energi saat ini             |
-| `energy_reset_at` | TIMESTAMP      | Waktu reset energi          |
-| `created_at`      | TIMESTAMP      | Waktu akun dibuat           |
-| `updated_at`      | TIMESTAMP      | Waktu terakhir update       |
-| `deleted_at`      | TIMESTAMP NULL | Soft delete                 |
+1. email dinormalisasi menjadi lowercase
+2. backend mengecek apakah email sudah dipakai
+3. password di-hash dengan `bcrypt`
+4. user baru disimpan ke database
+5. JWT token dibuat
+6. jika ada guest session aktif, task guest dipindahkan ke akun user
 
 ---
 
-# 4. Auth - Cara Kerja
+### 4.2 Login
 
-## 4.1 Bcrypt - Hash Password
+Saat user login:
 
-Bcrypt digunakan untuk mengubah password menjadi hash sebelum disimpan ke database.
-
-Password tidak pernah disimpan dalam bentuk plain text.
-
-### Saat Register
-
-```js
-const password_hash = await bcrypt.hash(data.password, 10);
-```
-
-### Saat Login
-
-```js
-const isMatch = await bcrypt.compare(
-  password,
-  user.password_hash
-);
-```
-
-## Kenapa menggunakan Bcrypt?
-
-* Hash bersifat satu arah
-* Password tidak bisa di-decrypt
-* Memiliki salt otomatis
-* Lebih tahan terhadap brute-force attack
-* Password yang sama menghasilkan hash berbeda
+1. backend mencari user berdasarkan email
+2. password dibandingkan dengan hash di database
+3. jika cocok, JWT token dibuat
+4. jika ada guest session aktif, task guest dipindahkan ke akun user
 
 ---
 
-## 4.2 JWT - Access Token
+### 4.3 JWT Token
 
-JWT digunakan sebagai access token untuk autentikasi user.
+Token dibuat melalui `utils/jwt.js` dan dipakai untuk autentikasi endpoint private.
 
-### Generate Token
+Payload token minimal berisi:
 
-```js
-// utils/jwt.js
+* `id`
+* `email`
 
-export const generateToken = (payload) => {
-  return jwt.sign(
-    {
-      id: payload.id,
-      email: payload.email,
-    },
-    process.env.JWT_SECRET,
-    {
-      expiresIn: "7d",
-    }
-  );
-};
-```
-
----
-
-## Struktur JWT
+Contoh penggunaan dari client:
 
 ```text
-header.payload.signature
-```
-
-### Payload JWT
-
-```json
-{
-  "id": "uuid",
-  "email": "user@mail.com",
-  "iat": 1711111111,
-  "exp": 1711715911
-}
-```
-
----
-
-## Cara Mengirim Token
-
-```http
 Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
 ```
 
-> JWT hanya ditandatangani (signed), bukan dienkripsi (encrypted).
-
 ---
 
-## 4.3 Auto Sync Guest ke User
+### 4.4 Auth Middleware
 
-Ketika guest melakukan register atau login, task milik guest akan otomatis dipindahkan ke akun user.
-
----
-
-## Alur Auto Sync
-
-1. Guest membuat task menggunakan `guest_session_id`
-2. Guest register/login menggunakan header `x-guest-session-token`
-3. Backend mencari data guest berdasarkan session token
-4. Semua task dipindahkan ke akun user
-
-```sql
-UPDATE tasks
-SET user_id = user.id
-WHERE guest_session_id = guest.id;
-```
-
----
-
-## Keuntungan Auto Sync
-
-* Data task guest tidak hilang
-* User experience lebih baik
-* Transisi guest ke user lebih mulus
-
----
-
-# 5. Middleware
-
-## 5.1 `guestOrAuth` Middleware
-
-Middleware ini mendukung dua jenis autentikasi:
-
-1. JWT Authentication
-2. Guest Session Authentication
-
-```js
-if (authHeader) {
-  // Verifikasi JWT
-  // Set req.identity sebagai user
-} else if (guestToken) {
-  // Verifikasi guest token
-  // Set req.identity sebagai guest
-} else {
-  // Unauthorized
-}
-```
-
----
-
-## Identity untuk User
-
-```js
-req.identity = {
-  type: "user",
-  user_id: "uuid",
-  guest_session_id: null,
-};
-```
-
----
-
-## Identity untuk Guest
-
-```js
-req.identity = {
-  type: "guest",
-  user_id: null,
-  guest_session_id: "uuid",
-};
-```
-
----
-
-## 5.2 `validate` Middleware
-
-Middleware ini digunakan untuk validasi request menggunakan Zod.
-
-```js
-router.post(
-  "/register",
-  validate(registerSchema),
-  controller.register
-);
-```
-
-Jika validasi gagal:
-
-```http
-400 Bad Request
-```
-
----
-
-# 6. Setup Postman
-
-## Environment Variables
-
-| Variable      | Initial Value                  | Current Value                  |
-| ------------- | ------------------------------ | ------------------------------ |
-| `BASE_URL`    | `http://localhost:5000/api/v1` | `http://localhost:5000/api/v1` |
-| `GUEST_TOKEN` | *(kosong)*                     | *(otomatis terisi)*            |
-| `AUTH_TOKEN`  | *(kosong)*                     | *(otomatis terisi)*            |
-
----
-
-## Auto Simpan Token
-
-Tambahkan script berikut di tab **Tests**:
-
-```js
-const json = pm.response.json();
-
-pm.environment.set(
-  "AUTH_TOKEN",
-  json.data.token
-);
-```
-
----
-
-## Mengirim Token
-
-```http
-Authorization: Bearer {{AUTH_TOKEN}}
-```
-
----
-
-# 7. API Reference
-
-## Base URL
+Middleware auth memeriksa header:
 
 ```text
-http://localhost:5000/api/v1
+Authorization: Bearer <token>
 ```
 
----
+Kalau token valid:
 
-# POST `/auth/register`
+* backend mengisi `req.user`
+* request boleh lanjut ke controller
 
-Digunakan untuk membuat akun baru.
+Kalau token tidak ada / salah / expired:
 
-Jika terdapat header `x-guest-session-token`, maka task guest akan otomatis dipindahkan ke akun user.
+* backend mengembalikan `401 Unauthorized`
 
----
-
-## Request
-
-### Method
-
-```http
-POST
-```
-
-### Endpoint
-
-```http
-/auth/register
-```
-
----
-
-## Headers
-
-| Header                  | Wajib | Keterangan         |
-| ----------------------- | ----- | ------------------ |
-| `Content-Type`          | Ya    | `application/json` |
-| `x-guest-session-token` | Tidak | Token guest        |
-
----
-
-## Request Body
+Contoh data user yang diinject ke request:
 
 ```json
 {
-  "email": "budi@kampus.ac.id",
-  "password": "password123",
-  "display_name": "Budi Santoso"
+  "id": "user-uuid",
+  "email": "user@example.com"
 }
 ```
 
 ---
 
-## Validasi Input
+### 4.5 Guest Migration
 
-| Field          | Aturan                       |
-| -------------- | ---------------------------- |
-| `email`        | Wajib dan format email valid |
-| `password`     | Wajib, minimal 6 karakter    |
-| `display_name` | Wajib, minimal 3 karakter    |
+Salah satu fitur penting Bento-do adalah **Guest Mode**.
+Kalau user sudah membuat task sebagai guest, lalu register/login, task guest bisa otomatis dipindahkan ke akun user.
+
+Header yang dipakai saat migration:
+
+```text
+x-guest-session-token: <guest_session_token>
+```
+
+Hasil migration ditandai dengan field:
+
+```json
+{
+  "migrated_tasks_count": 1
+}
+```
 
 ---
 
-## Response Success — `201 Created`
+## 5. Setup Postman
+
+### 5.1 Buat Environment
+
+Buat environment baru, misalnya:
+
+**Bento-do Local**
+
+Isi variabel:
+
+```text
+base_url = http://localhost:5000/api/v1
+token_user =
+token_user_2 =
+guest_session_token =
+user_id =
+user_id_2 =
+```
+
+---
+
+### 5.2 Auto Save Token Setelah Register/Login
+
+Di tab **Tests** request register/login, tempel script ini:
+
+```javascript
+const json = pm.response.json();
+
+pm.environment.set("token_user", json.data.token);
+pm.environment.set("user_id", json.data.user.id);
+```
+
+Untuk user kedua:
+
+```javascript
+const json = pm.response.json();
+
+pm.environment.set("token_user_2", json.data.token);
+pm.environment.set("user_id_2", json.data.user.id);
+```
+
+---
+
+### 5.3 Pakai Token di Request Protected
+
+Untuk endpoint private, isi header:
+
+```text
+Authorization: Bearer {{token_user}}
+```
+
+Atau di tab **Authorization** → **Bearer Token**:
+
+```text
+{{token_user}}
+```
+
+---
+
+## 6. API Reference
+
+---
+
+## 6.1 Register
+
+### `POST /api/v1/auth/register`
+
+Mendaftarkan user baru.
+
+### Headers
+
+```text
+Content-Type: application/json
+```
+
+### Body
+
+```json
+{
+  "email": "fulltest.user1@example.com",
+  "password": "password123",
+  "display_name": "Full Test User 1"
+}
+```
+
+### Response `201`
+
+```json
+{
+  "success": true,
+  "message": "Register berhasil.",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "fulltest.user1@example.com",
+      "display_name": "Full Test User 1",
+      "current_energy": 240,
+      "max_energy": 240,
+      "created_at": "2026-05-12T06:25:22.422Z"
+    },
+    "token": "jwt-token",
+    "migrated_tasks_count": 0
+  }
+}
+```
+
+---
+
+### Register + Guest Migration
+
+Kalau user register sambil membawa session guest:
+
+#### Headers
+
+```text
+x-guest-session-token: {{guest_session_token}}
+Content-Type: application/json
+```
+
+#### Body
+
+```json
+{
+  "email": "fulltest.guestmigrate@example.com",
+  "password": "password123",
+  "display_name": "Guest Migrated User"
+}
+```
+
+#### Response `201`
 
 ```json
 {
@@ -431,80 +318,57 @@ POST
   "data": {
     "user": {
       "id": "uuid",
-      "email": "budi@kampus.ac.id",
-      "display_name": "Budi Santoso",
+      "email": "fulltest.guestmigrate@example.com",
+      "display_name": "Guest Migrated User",
       "current_energy": 240,
-      "max_energy": 240
+      "max_energy": 240,
+      "created_at": "timestamp"
     },
-    "token": "eyJhbGciOiJIUzI1NiIs...",
-    "migrated_tasks_count": 3
+    "token": "jwt-token",
+    "migrated_tasks_count": 1
   }
 }
 ```
 
 ---
 
-## Response Code
+## 6.2 Login
 
-| Status Code | Keterangan            |
-| ----------- | --------------------- |
-| `201`       | Register berhasil     |
-| `400`       | Input tidak valid     |
-| `409`       | Email sudah digunakan |
+### `POST /api/v1/auth/login`
 
----
+Login user lama.
 
-# POST `/auth/login`
+### Headers
 
-Digunakan untuk login menggunakan email dan password.
-
----
-
-## Request
-
-### Method
-
-```http
-POST
+```text
+Content-Type: application/json
 ```
 
-### Endpoint
-
-```http
-/auth/login
-```
-
----
-
-## Headers
-
-| Header                  | Wajib | Keterangan         |
-| ----------------------- | ----- | ------------------ |
-| `Content-Type`          | Ya    | `application/json` |
-| `x-guest-session-token` | Tidak | Token guest        |
-
----
-
-## Request Body
+### Body
 
 ```json
 {
-  "email": "budi@kampus.ac.id",
+  "email": "fulltest.user1@example.com",
   "password": "password123"
 }
 ```
 
----
-
-## Response Success — `200 OK`
+### Response `200`
 
 ```json
 {
   "success": true,
   "message": "Login berhasil.",
   "data": {
-    "user": {},
-    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "user": {
+      "id": "uuid",
+      "email": "fulltest.user1@example.com",
+      "display_name": "Full Test User 1",
+      "current_energy": 240,
+      "max_energy": 240,
+      "created_at": "timestamp"
+    },
+    "token": "jwt-token",
     "migrated_tasks_count": 0
   }
 }
@@ -512,63 +376,130 @@ POST
 
 ---
 
-## Response Code
+### Login + Guest Migration
 
-| Status Code | Keterangan                |
-| ----------- | ------------------------- |
-| `200`       | Login berhasil            |
-| `400`       | Input tidak valid         |
-| `401`       | Email atau password salah |
-
----
-
-# 8. Alur Lengkap
+#### Headers
 
 ```text
-1. Client POST /guest
-2. Server mengembalikan guest session token
+x-guest-session-token: {{guest_session_token}}
+Content-Type: application/json
+```
 
-3. Client POST /tasks
-4. Task disimpan sebagai task guest
+#### Body
 
-5. Client GET /tasks
-6. Verifikasi task guest
+```json
+{
+  "email": "fulltest.user1@example.com",
+  "password": "password123"
+}
+```
 
-7. Client POST /auth/register
-8. Sertakan x-guest-session-token
+#### Response `200`
 
-9. Backend memindahkan task guest
-10. JWT token dikembalikan
-
-11. Client GET /tasks
-12. Gunakan Authorization: Bearer <token>
+```json
+{
+  "success": true,
+  "message": "Login berhasil. Data guest kamu sudah dipindahkan!",
+  "data": {
+    "user": {
+      "id": "uuid",
+      "email": "fulltest.user1@example.com",
+      "display_name": "Full Test User 1"
+    },
+    "token": "jwt-token",
+    "migrated_tasks_count": 1
+  }
+}
 ```
 
 ---
 
-# 9. Testing dengan Collection Runner
-
-## Folder
+## 7. Alur Lengkap Auth
 
 ```text
-2. USER AUTHENTICATION
+1. Client kirim POST /api/v1/auth/register atau /api/v1/auth/login
+        ↓
+2. Controller menerima body request
+        ↓
+3. Validation middleware memeriksa payload
+        ↓
+4. Service:
+   - normalize email
+   - register: hash password
+   - login: compare password
+   - cek guest session jika ada
+   - migrasikan task guest ke user
+        ↓
+5. utils/jwt.js membuat token JWT
+        ↓
+6. Controller mengirim response:
+   - user object
+   - token
+   - migrated_tasks_count
+        ↓
+7. Client menyimpan token
+        ↓
+8. Client akses protected route dengan header Authorization: Bearer <token>
+        ↓
+9. authMiddleware memverifikasi token
+        ↓
+10. req.user terisi dan request lanjut
 ```
-
-| No | Request                                  | Ekspektasi                   |
-| -- | ---------------------------------------- | ---------------------------- |
-| 1  | `POST /auth/register` tanpa guest        | `201`, migrated count = `0`  |
-| 2  | `POST /auth/register` dengan guest token | `201`, migrated count > `0`  |
-| 3  | `POST /auth/login` normal                | `200`, mendapatkan token     |
-| 4  | `POST /auth/login` dengan guest token    | `200`, migrated count >= `0` |
 
 ---
 
-# ✅ Catatan
+## 8. Status Code yang Umum Dipakai
 
-* Password tidak pernah disimpan dalam bentuk plain text
-* JWT expired dalam `7 hari`
-* Task guest otomatis dipindahkan ke akun user
-* Validasi menggunakan Zod
-* Struktur API mengikuti prinsip RESTful
-* Arsitektur middleware modular dan scalable
+| Status Code | Arti                                        |
+| ----------- | ------------------------------------------- |
+| `200`       | Login berhasil                              |
+| `201`       | Register berhasil                           |
+| `400`       | Payload tidak valid                         |
+| `401`       | Email/password salah atau token tidak valid |
+| `409`       | Email sudah digunakan                       |
 
+---
+
+## 9. Catatan Penting
+
+### ✅ Yang sudah diverifikasi saat testing
+
+* Register user berhasil
+* Login user berhasil
+* Duplicate email ditolak
+* Invalid password ditolak
+* JWT token bisa dipakai untuk endpoint protected
+* Guest migration saat register berhasil
+* Guest migration saat login berhasil
+
+### ⚠️ Catatan implementasi
+
+* Auth Bento-do saat ini memakai **JWT Bearer token**
+* Token dikirim lewat **response body**, bukan cookie
+* Guest migration diuji berhasil memakai header:
+
+```text
+x-guest-session-token: <guest_token>
+```
+
+### 🧪 Folder Postman terkait auth
+
+```text
+03 - Auth
+├── 03.1 - Register User 1
+├── 03.2 - Login User 1
+├── 03.3 - Register User 2
+├── 03.4 - Login User 2
+├── 03.5 - Register Guest Migration User
+├── 03.6 - Login Invalid Password
+└── 03.7 - Register Duplicate Email
+```
+
+### ✅ Status akhir
+
+Module **Auth** sudah berhasil diuji dan **pass** dalam full integration testing.
+
+
+
+**`Dokumentasi Guest API.md`**
+```
