@@ -1,24 +1,63 @@
-import express from "express";
 import dotenv from "dotenv";
-import cors from "cors";
-import cookieParser from "cookie-parser";
-
-// Memanggil koneksi database 
-import { db } from "./config/db.js";
 
 dotenv.config();
-const app = express();
-const PORT = process.env.PORT || 5000;
 
-// === MIDDLEWARES GLOBAL ===
-app.use(cors());
-app.use(express.json());
-app.use(cookieParser());
+import app from "./app.js";
+import { db } from "./config/db.js";
 
-app.get("/", (req, res) => {
-  res.send("Hello World! (dan selamat datang di API Bento-do)");
+const PORT = Number(process.env.PORT) || 5000;
+
+let server;
+
+const shutdown = async (signal) => {
+  console.log(`\n⚠️ Menerima sinyal ${signal}. Menutup server dengan aman...`);
+
+  try {
+    if (server) {
+      await new Promise((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            return reject(error);
+          }
+
+          resolve();
+        });
+      });
+    }
+
+    await db.end();
+    console.log("✅ Server dan koneksi database berhasil ditutup.");
+    process.exit(0);
+  } catch (error) {
+    console.error("❌ Gagal shutdown dengan aman:", error.message);
+    process.exit(1);
+  }
+};
+
+const startServer = async () => {
+  try {
+    await db.query("SELECT NOW()");
+    console.log("✅ Database connected successfully!");
+
+    server = app.listen(PORT, () => {
+      console.log(`🚀 Bento-do API running on port ${PORT}`);
+    });
+  } catch (error) {
+    console.error("❌ Failed to start server:", error.message);
+    process.exit(1);
+  }
+};
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+process.on("unhandledRejection", (reason) => {
+  console.error("UNHANDLED REJECTION:", reason);
 });
 
-app.listen(PORT, () => {
-  console.log(`Example app listening on port ${PORT}`);
+process.on("uncaughtException", (error) => {
+  console.error("UNCAUGHT EXCEPTION:", error);
+  shutdown("uncaughtException");
 });
+
+startServer();
