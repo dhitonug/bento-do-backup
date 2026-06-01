@@ -1,4 +1,5 @@
 import { db } from "../../config/db.js";
+import { toPostgresTimestamp } from "../../utils/date.js";
 
 const notificationColumns = `
   id,
@@ -189,7 +190,14 @@ export const createNotification = async (
       RETURNING
         ${notificationColumns}
     `,
-    [user_id, task_id, message, type, scheduled_at, sent_at],
+    [
+      user_id,
+      task_id,
+      message,
+      type,
+      toPostgresTimestamp(scheduled_at),
+      toPostgresTimestamp(sent_at),
+    ],
   );
 
   return rows[0];
@@ -202,12 +210,28 @@ export const findDueUnsentNotifications = async (
   const { rows } = await executor.query(
     `
       SELECT
-        ${notificationColumns}
-      FROM notifications
-      WHERE deleted_at IS NULL
-      AND sent_at IS NULL
-      AND scheduled_at <= NOW()
-      ORDER BY scheduled_at ASC, created_at ASC
+        n.id,
+        n.user_id,
+        n.task_id,
+        n.message,
+        n.type,
+        n.scheduled_at,
+        n.sent_at,
+        n.is_read,
+        n.created_at,
+        n.updated_at,
+        u.email AS user_email,
+        u.display_name AS user_display_name,
+        t.title AS task_title,
+        t.deadline AS task_deadline
+      FROM notifications n
+      JOIN users u ON u.id = n.user_id
+      LEFT JOIN tasks t ON t.id = n.task_id
+      WHERE n.deleted_at IS NULL
+      AND n.sent_at IS NULL
+      AND n.scheduled_at <= NOW()
+      AND u.deleted_at IS NULL
+      ORDER BY n.scheduled_at ASC, n.created_at ASC
       LIMIT $1
     `,
     [limit],
@@ -285,7 +309,13 @@ export const updateNotification = async (
       RETURNING
         ${notificationColumns}
     `,
-    [notificationId, message, scheduled_at, sent_at, is_read],
+    [
+      notificationId,
+      message,
+      toPostgresTimestamp(scheduled_at),
+      toPostgresTimestamp(sent_at),
+      is_read,
+    ],
   );
 
   return rows[0] || null;

@@ -5,6 +5,22 @@ const getGuestSessionToken = (req) => {
   return req.headers["x-guest-session-token"] || null;
 };
 
+const getBearerToken = (req) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return null;
+  }
+
+  if (!authHeader.startsWith("Bearer ")) {
+    return false;
+  }
+
+  const token = authHeader.split(" ")[1]?.trim();
+
+  return token || false;
+};
+
 const handleAuthError = (res, error, fallbackLabel) => {
   console.error(fallbackLabel, error);
 
@@ -61,5 +77,52 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     return handleAuthError(res, error, "LOGIN ERROR:");
+  }
+};
+
+// FORGOT PASSWORD
+export const forgotPassword = async (req, res) => {
+  try {
+    await authService.requestPasswordReset(req.body.email);
+
+    return res.status(200).json({
+      success: true,
+      message: "Jika email terdaftar, link reset password sudah dikirim.",
+    });
+  } catch (error) {
+    return handleAuthError(res, error, "FORGOT PASSWORD ERROR:");
+  }
+};
+
+// RESET PASSWORD
+export const resetPassword = async (req, res) => {
+  try {
+    const resetToken = getBearerToken(req);
+
+    if (resetToken === null) {
+      return res.status(401).json({
+        success: false,
+        message: "Authorization header dibutuhkan!",
+      });
+    }
+
+    if (resetToken === false) {
+      return res.status(401).json({
+        success: false,
+        message: "Format token harus Bearer token!",
+      });
+    }
+
+    await authService.resetPassword({
+      reset_token: resetToken,
+      new_password: req.body.new_password,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Password berhasil direset. Silakan login kembali.",
+    });
+  } catch (error) {
+    return handleAuthError(res, error, "RESET PASSWORD ERROR:");
   }
 };

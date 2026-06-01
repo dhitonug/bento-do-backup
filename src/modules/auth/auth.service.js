@@ -1,11 +1,17 @@
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 
+import { db } from "../../config/db.js";
 import * as authRepo from "./auth.repository.js";
 import * as taskRepo from "../tasks/tasks.repository.js";
 import * as guestRepo from "../guest/guest.repository.js";
 import * as notificationsService from "../notifications/notifications.service.js";
 
 import { generateToken } from "../../utils/jwt.js";
+import { sendPasswordResetEmail } from "../../utils/email.js";
+
+const PASSWORD_RESET_EXPIRES_MINUTES =
+  Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES) || 15;
 
 // HELPER
 const createAppError = (message, status = 400, extra = {}) => {
@@ -17,6 +23,28 @@ const createAppError = (message, status = 400, extra = {}) => {
 
 const normalizeEmail = (email) => {
   return email.trim().toLowerCase();
+};
+
+const hashResetToken = (token) => {
+  return crypto.createHash("sha256").update(token).digest("hex");
+};
+
+const buildResetPasswordUrl = (token) => {
+  const clientOrigin = (
+    process.env.CLIENT_ORIGINS || "http://localhost:5173"
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)[0];
+
+  const resetUrlBase =
+    process.env.PASSWORD_RESET_URL ||
+    `${process.env.FRONTEND_URL || clientOrigin}/reset-password`;
+
+  const resetUrl = new URL(resetUrlBase);
+  resetUrl.searchParams.set("token", token);
+
+  return resetUrl.toString();
 };
 
 const buildAuthResponse = (user, token, migratedTasksCount = 0) => {
@@ -131,4 +159,97 @@ export const login = async ({ email, password, guest_session_id }) => {
   });
 
   return buildAuthResponse(user, token, migratedCount);
+};
+
+// FORGOT PASSWORD
+export const requestPasswordReset = async (email) => {
+  const normalizedEmail = normalizeEmail(email);
+  const user = await authRepo.findUserByEmail(normalizedEmail);
+
+  if (!user) {
+    return {
+      email_sent: false,
+    };
+  }
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = hashResetToken(rawToken);
+  const expiresAt = new Date(
+    Date.now() + PASSWORD_RESET_EXPIRES_MINUTES * 60 * 1000,
+  );
+
+  await authRepo.revokeUnusedPasswordResetTokensForUser(user.id);
+  await authRepo.createPasswordResetToken({
+    user_id: user.id,
+    token_hash: tokenHash,
+    expires_at: expiresAt,
+  });
+
+  const resetUrl = buildResetPasswordUrl(rawToken);
+
+  await sendPasswordResetEmail({
+    to: user.email,
+    displayName: user.display_name,
+    resetUrl,
+    expiresMinutes: PASSWORD_RESET_EXPIRES_MINUTES,
+  });
+
+  return {
+    email_sent: true,
+  };
+};
+
+// RESET PASSWORD
+export const resetPassword = async ({ reset_token, new_password }) => {
+  const tokenHash = hashResetToken(reset_token);
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const resetToken = await authRepo.findValidPasswordResetToken(
+      tokenHash,
+      client,
+    );
+
+    if (!resetToken) {
+      throw createAppError(
+        "Token reset password tidak valid atau sudah kadaluarsa!",
+        400,
+        {
+          code: "INVALID_RESET_TOKEN",
+        },
+      );
+    }
+
+    const password_hash = await bcrypt.hash(new_password, 10);
+
+    const user = await authRepo.updateUserPassword(
+      resetToken.user_id,
+      password_hash,
+      client,
+    );
+
+    if (!user) {
+      throw createAppError("User tidak ditemukan!", 404);
+    }
+
+    await authRepo.markPasswordResetTokenAsUsed(resetToken.id, client);
+    await authRepo.revokeUnusedPasswordResetTokensForUser(user.id, client);
+
+    await client.query("COMMIT");
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
+      },
+    };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };

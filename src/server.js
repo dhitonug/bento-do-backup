@@ -4,15 +4,22 @@ dotenv.config();
 
 import app from "./app.js";
 import { db } from "./config/db.js";
+import { ensureOperationalTables } from "./config/schema.js";
+import {
+  startNotificationEmailDispatcher,
+  stopNotificationEmailDispatcher,
+} from "./modules/notifications/notifications.emailDispatcher.js";
 
 const PORT = Number(process.env.PORT) || 5000;
 
 let server;
 
 const shutdown = async (signal) => {
-  console.log(`\n⚠️ Menerima sinyal ${signal}. Menutup server dengan aman...`);
+  console.log(`\nMenerima sinyal ${signal}. Menutup server dengan aman...`);
 
   try {
+    stopNotificationEmailDispatcher();
+
     if (server) {
       await new Promise((resolve, reject) => {
         server.close((error) => {
@@ -26,10 +33,10 @@ const shutdown = async (signal) => {
     }
 
     await db.end();
-    console.log("✅ Server dan koneksi database berhasil ditutup.");
+    console.log("Server dan koneksi database berhasil ditutup.");
     process.exit(0);
   } catch (error) {
-    console.error("❌ Gagal shutdown dengan aman:", error.message);
+    console.error("Gagal shutdown dengan aman:", error.message);
     process.exit(1);
   }
 };
@@ -37,13 +44,16 @@ const shutdown = async (signal) => {
 const startServer = async () => {
   try {
     await db.query("SELECT NOW()");
-    console.log("✅ Database connected successfully!");
+    await ensureOperationalTables();
+    console.log("Database connected successfully!");
 
     server = app.listen(PORT, () => {
-      console.log(`🚀 Bento-do API running on port ${PORT}`);
+      console.log(`Bento-do API running on port ${PORT}`);
     });
+
+    startNotificationEmailDispatcher();
   } catch (error) {
-    console.error("❌ Failed to start server:", error.message);
+    console.error("Failed to start server:", error.message);
     process.exit(1);
   }
 };
