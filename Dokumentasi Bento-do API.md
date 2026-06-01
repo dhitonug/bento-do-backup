@@ -1,7 +1,7 @@
 
 # 🚀 Dokumentasi REST API — Bento-do
 
-> Stack: Express.js · PostgreSQL (Neon) · JWT · Zod · CORS · Helmet · Cookie Parser · XSS Sanitizer
+> Stack: Express.js · PostgreSQL (Neon) · JWT · Zod · CORS · Helmet · Cookie Parser · XSS Sanitizer · Nodemailer SMTP
 
 ---
 
@@ -87,6 +87,7 @@ Backend menggunakan:
 * **Express.js** → web framework
 * **PostgreSQL (Neon)** → database utama
 * **JWT** → autentikasi user login
+* **Nodemailer / SMTP** → email reset password dan reminder deadline
 * **Zod** → validasi input request
 * **Helmet** → security headers
 * **CORS** → kontrol origin frontend
@@ -147,7 +148,8 @@ src/
 ├── app.js
 ├── server.js
 ├── config/
-│   └── db.js
+│   ├── db.js
+│   └── schema.js
 ├── middlewares/
 │   ├── auth.middleware.js
 │   ├── guestOrAuth.middleware.js
@@ -164,7 +166,9 @@ src/
 │   ├── energy/
 │   └── notifications/
 └── utils/
-    └── jwt.js
+    ├── jwt.js
+    ├── email.js
+    └── date.js
 ```
 
 ---
@@ -179,10 +183,25 @@ DATABASE_URL=your_neon_database_url
 JWT_SECRET=your_jwt_secret
 JWT_EXPIRES=7d
 CLIENT_ORIGINS=http://localhost:5173
+FRONTEND_URL=http://localhost:5173
+PASSWORD_RESET_URL=http://localhost:5173/reset-password
+PASSWORD_RESET_EXPIRES_MINUTES=15
 DB_SSL=true
 DB_POOL_MAX=10
 DB_IDLE_TIMEOUT_MS=30000
 DB_CONNECTION_TIMEOUT_MS=10000
+
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_USER=your_project_email@gmail.com
+EMAIL_PASS=your_google_app_password
+EMAIL_FROM="Bento-do <your_project_email@gmail.com>"
+EMAIL_DEV_LOG=false
+
+EMAIL_NOTIFICATIONS_ENABLED=true
+NOTIFICATION_EMAIL_INTERVAL_MS=60000
+NOTIFICATION_EMAIL_BATCH_LIMIT=50
 ```
 
 > ⚠️ Jangan commit file `.env` ke repository.
@@ -401,6 +420,59 @@ x-guest-session-token: <guest_session_token>
 ```
 
 maka task guest dapat dipindahkan ke akun user.
+
+### `POST /api/v1/auth/forgot-password`
+
+Meminta link reset password ke email user.
+
+**Body**
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+**Response 200**
+
+```json
+{
+  "success": true,
+  "message": "Jika email terdaftar, link reset password sudah dikirim."
+}
+```
+
+Response selalu generik agar email terdaftar tidak bisa ditebak.
+
+### `POST /api/v1/auth/reset-password`
+
+Mengganti password memakai reset token dari email.
+
+**Headers**
+
+```text
+Authorization: Bearer <reset_token>
+Content-Type: application/json
+```
+
+**Body**
+
+```json
+{
+  "new_password": "passwordBaru123"
+}
+```
+
+**Response 200**
+
+```json
+{
+  "success": true,
+  "message": "Password berhasil direset. Silakan login kembali."
+}
+```
+
+Reset token ini berbeda dari JWT login, berlaku singkat, dan hanya bisa dipakai sekali.
 
 ---
 
@@ -665,6 +737,22 @@ Menandai semua notifikasi visible sebagai sudah dibaca.
 
 Soft delete notifikasi.
 
+### Email Deadline Reminder
+
+Selain inbox in-app, backend juga mengirim email reminder deadline secara otomatis.
+
+Dispatcher berjalan saat server start dan memproses notification yang memenuhi:
+
+```text
+sent_at IS NULL
+scheduled_at <= NOW()
+deleted_at IS NULL
+```
+
+Setelah email berhasil dikirim, backend mengisi `sent_at = NOW()`.
+
+Frontend tidak perlu endpoint khusus untuk mengirim email reminder. Frontend cukup membuat task dengan `deadline` yang valid.
+
 ---
 
 ## 10. Business Rules Penting
@@ -691,6 +779,10 @@ Inbox notifications hanya menampilkan row yang memenuhi:
 
 * `scheduled_at <= NOW()`
 * `deleted_at IS NULL`
+
+Email reminder memakai rule tambahan:
+
+* `sent_at IS NULL`
 
 ### 10.6 Soft Delete Strategy
 
@@ -843,7 +935,7 @@ Agar dokumentasi lebih rapi, detail per modul dipisah ke file terpisah:
 * `Dokumentasi Dashboard API.md`
 * `Dokumentasi Focus API.md`
 * `Dokumentasi Energy API.md`
-* `Dokumentasi Notifications API.md`
+* `Dokumentasi Notification API.md`
 
 Dokumen induk ini berfungsi sebagai:
 
@@ -862,6 +954,7 @@ Dokumen induk ini berfungsi sebagai:
 
   * `scheduled_at <= NOW()`
 * reminder deadline yang belum masuk waktu tampil **tidak akan muncul** di endpoint `/notifications`, walaupun row-nya sudah ada di database
+* email deadline reminder dikirim otomatis oleh backend dispatcher saat notification sudah due
 * push notification ke device/browser via FCM **belum termasuk** dalam final scope backend ini
 
 ### Scope backend yang saat ini sudah final
@@ -874,6 +967,8 @@ Dokumen induk ini berfungsi sebagai:
 * Focus
 * Energy
 * In-app notifications
+* Forgot/reset password via email
+* Email deadline reminders
 * Deadline reminder lifecycle
 
 ### Status akhir
