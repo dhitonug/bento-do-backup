@@ -66,7 +66,7 @@ Module Notifications dibuat agar user bisa:
 * 🗑️ menghapus notifikasi dari inbox tanpa hard delete
 * ⏰ menerima reminder deadline yang sinkron dengan lifecycle task
 
-Notifications di Bento-do adalah **in-app notifications**, bukan push notification ke device/browser.
+Notifications di Bento-do adalah **in-app notifications** dengan opsi email reminder untuk notification yang sudah due.
 
 ---
 
@@ -471,7 +471,7 @@ Field penting:
 * `message` → isi notifikasi
 * `type` → jenis notifikasi
 * `scheduled_at` → waktu notifikasi dijadwalkan muncul
-* `sent_at` → waktu notifikasi dianggap terkirim/siap tampil
+* `sent_at` → waktu notifikasi email dianggap terkirim; inbox tetap memakai `scheduled_at <= NOW()`
 * `is_read` → status baca user
 
 ---
@@ -599,4 +599,40 @@ DELETE /api/v1/notifications/:id
 Module **Notifications** sudah diuji dan **pass** dalam full integration testing.
 
 ---
+
+## 12. Email Notification
+
+Selain inbox in-app, deadline reminder sekarang juga bisa dikirim ke email user.
+Implementasi ini tidak memakai Firebase. Backend menjalankan dispatcher kecil yang mengecek notification due:
+
+```text
+sent_at IS NULL
+scheduled_at <= NOW()
+deleted_at IS NULL
+```
+
+Jika notification due ditemukan, backend mengirim email ke `users.email`, lalu mengisi `sent_at = NOW()`.
+Notification tetap bisa dibaca lewat endpoint inbox seperti biasa.
+
+### Environment
+
+```env
+EMAIL_NOTIFICATIONS_ENABLED=true
+NOTIFICATION_EMAIL_INTERVAL_MS=60000
+NOTIFICATION_EMAIL_BATCH_LIMIT=50
+
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_USER=email_kamu@gmail.com
+EMAIL_PASS=app_password_kamu
+EMAIL_FROM="Bento-do <email_kamu@gmail.com>"
+```
+
+Jika SMTP belum diisi saat development, email akan dicetak ke console karena `EMAIL_DEV_LOG=true`.
+Untuk mematikan pengiriman email notification, set:
+
+```env
+EMAIL_NOTIFICATIONS_ENABLED=false
+```
 

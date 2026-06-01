@@ -499,7 +499,79 @@ x-guest-session-token: <guest_token>
 
 Module **Auth** sudah berhasil diuji dan **pass** dalam full integration testing.
 
+---
 
+## Tambahan: Forgot Password & Reset Password
 
-**`Dokumentasi Guest API.md`**
+Auth sekarang bisa menangani lupa password tanpa Firebase.
+
+Flow yang dipakai:
+
+1. User meminta link reset password lewat email.
+2. Backend membuat reset token acak yang berlaku singkat.
+3. Backend menyimpan hash token ke database, bukan token mentah.
+4. Link reset dikirim ke email user.
+5. Frontend mengirim password baru dengan header `Authorization: Bearer <reset_token>`.
+6. Backend mengganti `users.password_hash`, lalu token reset ditandai sudah dipakai.
+
+### `POST /api/v1/auth/forgot-password`
+
+Request:
+
+```json
+{
+  "email": "user@example.com"
+}
 ```
+
+Response selalu generik supaya email terdaftar tidak bisa ditebak:
+
+```json
+{
+  "success": true,
+  "message": "Jika email terdaftar, link reset password sudah dikirim."
+}
+```
+
+### `POST /api/v1/auth/reset-password`
+
+Headers:
+
+```text
+Authorization: Bearer <reset_token>
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "new_password": "passwordBaru123"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "message": "Password berhasil direset. Silakan login kembali."
+}
+```
+
+### Environment untuk Email Reset Password
+
+```env
+FRONTEND_URL=http://localhost:5173
+PASSWORD_RESET_URL=http://localhost:5173/reset-password
+PASSWORD_RESET_EXPIRES_MINUTES=15
+
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_SECURE=false
+EMAIL_USER=email_kamu@gmail.com
+EMAIL_PASS=app_password_kamu
+EMAIL_FROM="Bento-do <email_kamu@gmail.com>"
+```
+
+Jika SMTP belum diisi saat development, email akan dicetak ke console lewat `EMAIL_DEV_LOG=true`.

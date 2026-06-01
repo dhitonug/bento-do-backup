@@ -4,6 +4,11 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const { Pool } = pkg;
+const TIMESTAMP_OID = 1114;
+
+pkg.types.setTypeParser(TIMESTAMP_OID, (value) => {
+  return new Date(`${value}Z`);
+});
 
 const isProduction = process.env.NODE_ENV === "production";
 const shouldUseSSL =
