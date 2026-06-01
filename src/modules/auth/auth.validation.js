@@ -44,3 +44,17 @@ export const loginSchema = z
     password: passwordSchema,
   })
   .strict();
+
+// FORGOT PASSWORD SCHEMA
+export const forgotPasswordSchema = z
+  .object({
+    email: emailSchema,
+  })
+  .strict();
+
+// RESET PASSWORD SCHEMA
+export const resetPasswordSchema = z
+  .object({
+    new_password: passwordSchema,
+  })
+  .strict();
