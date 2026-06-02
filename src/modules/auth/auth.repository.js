@@ -1,5 +1,4 @@
 import { db } from "../../config/db.js";
-import { toPostgresTimestamp } from "../../utils/date.js";
 
 // FIND USER BY EMAIL
 // Dipakai saat:
@@ -109,7 +108,7 @@ export const updateUserPassword = async (
 
 // PASSWORD RESET TOKENS
 export const createPasswordResetToken = async (
-  { user_id, token_hash, expires_at },
+  { user_id, token_hash, expires_minutes },
   executor = db,
 ) => {
   const { rows } = await executor.query(
@@ -119,7 +118,7 @@ export const createPasswordResetToken = async (
         token_hash,
         expires_at
       )
-      VALUES ($1, $2, $3)
+      VALUES ($1, $2, NOW() + ($3::int * INTERVAL '1 minute'))
       RETURNING
         id,
         user_id,
@@ -128,7 +127,7 @@ export const createPasswordResetToken = async (
         used_at,
         created_at
     `,
-    [user_id, token_hash, toPostgresTimestamp(expires_at)],
+    [user_id, token_hash, expires_minutes],
   );
 
   return rows[0];

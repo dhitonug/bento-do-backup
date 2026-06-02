@@ -174,15 +174,12 @@ export const requestPasswordReset = async (email) => {
 
   const rawToken = crypto.randomBytes(32).toString("hex");
   const tokenHash = hashResetToken(rawToken);
-  const expiresAt = new Date(
-    Date.now() + PASSWORD_RESET_EXPIRES_MINUTES * 60 * 1000,
-  );
 
   await authRepo.revokeUnusedPasswordResetTokensForUser(user.id);
   await authRepo.createPasswordResetToken({
     user_id: user.id,
     token_hash: tokenHash,
-    expires_at: expiresAt,
+    expires_minutes: PASSWORD_RESET_EXPIRES_MINUTES,
   });
 
   const resetUrl = buildResetPasswordUrl(rawToken);

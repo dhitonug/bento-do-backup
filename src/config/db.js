@@ -12,7 +12,8 @@ pkg.types.setTypeParser(TIMESTAMP_OID, (value) => {
 
 const isProduction = process.env.NODE_ENV === "production";
 const shouldUseSSL =
-  process.env.DB_SSL === "true" || (isProduction && !!process.env.DATABASE_URL);
+  process.env.DB_SSL === "true" ||
+  (process.env.DB_SSL !== "false" && isProduction && !!process.env.DATABASE_URL);
 
 export const db = new Pool({
   connectionString: process.env.DATABASE_URL,
