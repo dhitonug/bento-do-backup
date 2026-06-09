@@ -78,3 +78,60 @@ export const applyTemplate = async (req, res) => {
     return handleTemplatesError(res, error, "APPLY TEMPLATE ERROR:");
   }
 };
+
+export const updateTemplate = async (req, res) => {
+  try {
+    const identifier = getIdentifier(req);
+    const { template_id } = req.params;
+
+    const result = await templatesService.updateTemplate(
+      identifier,
+      template_id,
+      req.body,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: "Template berhasil diperbarui.",
+      ...result,
+    });
+  } catch (error) {
+    return handleTemplatesError(res, error, "UPDATE TEMPLATE ERROR:");
+  }
+};
+
+export const deleteTemplate = async (req, res) => {
+  try {
+    const identifier = getIdentifier(req);
+    const { template_id } = req.params;
+
+    await templatesService.deleteTemplate(identifier, template_id);
+
+    return res.status(200).json({
+      success: true,
+      message: "Template berhasil dihapus.",
+    });
+  } catch (error) {
+    return handleTemplatesError(res, error, "DELETE TEMPLATE ERROR:");
+  }
+};
+
+export const saveTemplateAsPrivate = async (req, res) => {
+  try {
+    const identifier = getIdentifier(req);
+    const { template_key } = req.params;
+
+    const result = await templatesService.saveTemplateAsPrivate(
+      identifier,
+      template_key,
+    );
+
+    return res.status(201).json({
+      success: true,
+      message: "Template berhasil disimpan sebagai private.",
+      ...result,
+    });
+  } catch (error) {
+    return handleTemplatesError(res, error, "SAVE TEMPLATE AS PRIVATE ERROR:");
+  }
+};

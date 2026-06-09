@@ -331,6 +331,116 @@ export const createTemplate = async (userId, data, options = {}) => {
   }
 };
 
+export const updateOwnedTemplate = async (userId, templateId, data) => {
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const { rows } = await client.query(
+      `
+        UPDATE task_templates
+        SET
+          name = $3,
+          description = $4,
+          visibility = $5,
+          level = $6,
+          updated_at = NOW()
+        WHERE id = $1
+        AND created_by_user_id = $2
+        AND is_official = FALSE
+        AND deleted_at IS NULL
+        RETURNING key
+      `,
+      [
+        templateId,
+        userId,
+        data.name,
+        data.description ?? null,
+        data.visibility,
+        data.level,
+      ],
+    );
+
+    if (!rows[0]) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    await client.query(
+      `
+        UPDATE template_items
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE template_id = $1
+        AND deleted_at IS NULL
+      `,
+      [templateId],
+    );
+
+    for (const [index, item] of data.items.entries()) {
+      await client.query(
+        `
+          INSERT INTO template_items (
+            template_id,
+            title,
+            description,
+            energy_weight,
+            sort_order
+          )
+          VALUES ($1, $2, $3, $4, $5)
+        `,
+        [
+          templateId,
+          item.title,
+          item.description ?? null,
+          item.energy_weight,
+          index + 1,
+        ],
+      );
+    }
+
+    await client.query("COMMIT");
+
+    return await findTemplateByKey(rows[0].key, { user_id: userId });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+export const deleteOwnedTemplate = async (userId, templateId, executor = db) => {
+  const { rows } = await executor.query(
+    `
+      UPDATE task_templates
+      SET deleted_at = NOW(), updated_at = NOW()
+      WHERE id = $1
+      AND created_by_user_id = $2
+      AND is_official = FALSE
+      AND deleted_at IS NULL
+      RETURNING id
+    `,
+    [templateId, userId],
+  );
+
+  return rows[0] || null;
+};
+
+export const cloneTemplateAsPrivate = async (userId, template) => {
+  return createTemplate(userId, {
+    name: template.name,
+    description: template.description ?? "",
+    visibility: "private",
+    level: template.level ?? "Medium",
+    items: template.items.map((item) => ({
+      title: item.title,
+      description: item.description ?? "",
+      energy_weight: item.energy_weight,
+    })),
+  });
+};
+
 export const applyTemplate = async (identifier, template, sourceTemplate = null) => {
   const client = await db.connect();
 

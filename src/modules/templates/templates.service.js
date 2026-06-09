@@ -75,3 +75,58 @@ export const createTemplate = async (identifier, data) => {
     data: template,
   };
 };
+
+export const updateTemplate = async (identifier, templateId, data) => {
+  assertIdentifier(identifier);
+  assertUserOnly(identifier);
+
+  const template = await templatesRepo.updateOwnedTemplate(
+    identifier.user_id,
+    templateId,
+    data,
+  );
+
+  if (!template) {
+    throw createAppError("Template tidak ditemukan atau bukan milik kamu.", 404);
+  }
+
+  return {
+    data: template,
+  };
+};
+
+export const deleteTemplate = async (identifier, templateId) => {
+  assertIdentifier(identifier);
+  assertUserOnly(identifier);
+
+  const deleted = await templatesRepo.deleteOwnedTemplate(
+    identifier.user_id,
+    templateId,
+  );
+
+  if (!deleted) {
+    throw createAppError("Template tidak ditemukan atau bukan milik kamu.", 404);
+  }
+
+  return deleted;
+};
+
+export const saveTemplateAsPrivate = async (identifier, templateKey) => {
+  assertIdentifier(identifier);
+  assertUserOnly(identifier);
+
+  const template = await templatesRepo.findTemplateByKey(templateKey, identifier);
+
+  if (!template) {
+    throw createAppError("Template tidak ditemukan!", 404);
+  }
+
+  const privateTemplate = await templatesRepo.cloneTemplateAsPrivate(
+    identifier.user_id,
+    template,
+  );
+
+  return {
+    data: privateTemplate,
+  };
+};
