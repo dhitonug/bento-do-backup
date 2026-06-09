@@ -1,4 +1,5 @@
 import * as adminRepo from "./admin.repository.js";
+import * as templatesRepo from "../templates/templates.repository.js";
 
 const createAppError = (message, status = 400, extra = {}) => {
   const error = new Error(message);
@@ -27,6 +28,21 @@ export const getTemplates = async () => {
   return {
     total_items: templates.length,
     data: templates,
+  };
+};
+
+export const createTemplate = async (adminUserId, data) => {
+  const template = await templatesRepo.createTemplate(
+    adminUserId,
+    {
+      ...data,
+      visibility: "public",
+    },
+    { isOfficial: true },
+  );
+
+  return {
+    data: template,
   };
 };
 
