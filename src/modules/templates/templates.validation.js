@@ -30,6 +30,17 @@ export const templateKeyParamSchema = z
   })
   .strict();
 
+export const templateIdParamSchema = z
+  .object({
+    template_id: z
+      .string({
+        required_error: "Template id wajib diisi!",
+        invalid_type_error: "Template id harus berupa teks!",
+      })
+      .uuid("Template id tidak valid!"),
+  })
+  .strict();
+
 const visibilitySchema = z
   .enum(["public", "private", "Public", "Private", "PUBLIC", "PRIVATE", "Custom", "custom"])
   .transform((value) => {
@@ -100,3 +111,5 @@ export const createTemplateSchema = z
       .max(20, "Maksimal 20 task dalam satu template!"),
   })
   .strict();
+
+export const updateTemplateSchema = createTemplateSchema;
