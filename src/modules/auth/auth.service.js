@@ -53,6 +53,7 @@ const buildAuthResponse = (user, token, migratedTasksCount = 0) => {
       id: user.id,
       email: user.email,
       display_name: user.display_name,
+      role: user.role,
       current_energy: user.current_energy,
       max_energy: user.max_energy,
       created_at: user.created_at,
@@ -120,6 +121,7 @@ export const register = async (data) => {
     const token = generateToken({
       id: user.id,
       email: user.email,
+      role: user.role,
     });
 
     return buildAuthResponse(user, token, migratedCount);
@@ -156,6 +158,7 @@ export const login = async ({ email, password, guest_session_id }) => {
   const token = generateToken({
     id: user.id,
     email: user.email,
+    role: user.role,
   });
 
   return buildAuthResponse(user, token, migratedCount);

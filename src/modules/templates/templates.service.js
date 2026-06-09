@@ -30,7 +30,7 @@ export const getTemplates = async (identifier) => {
   assertIdentifier(identifier);
   assertUserOnly(identifier);
 
-  const templates = await templatesRepo.listTemplates();
+  const templates = await templatesRepo.listTemplates(identifier);
 
   return {
     total_items: templates.length,
@@ -42,7 +42,7 @@ export const applyTemplate = async (identifier, templateKey) => {
   assertIdentifier(identifier);
   assertUserOnly(identifier);
 
-  const template = await templatesRepo.findTemplateByKey(templateKey);
+  const template = await templatesRepo.findTemplateByKey(templateKey, identifier);
 
   if (!template) {
     throw createAppError("Template tidak ditemukan!", 404);
@@ -62,5 +62,16 @@ export const applyTemplate = async (identifier, templateKey) => {
     },
     inserted_count: createdTasks.length,
     data: createdTasks,
+  };
+};
+
+export const createTemplate = async (identifier, data) => {
+  assertIdentifier(identifier);
+  assertUserOnly(identifier);
+
+  const template = await templatesRepo.createTemplate(identifier.user_id, data);
+
+  return {
+    data: template,
   };
 };

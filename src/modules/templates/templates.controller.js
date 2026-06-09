@@ -43,6 +43,22 @@ export const getTemplates = async (req, res) => {
   }
 };
 
+export const createTemplate = async (req, res) => {
+  try {
+    const identifier = getIdentifier(req);
+
+    const result = await templatesService.createTemplate(identifier, req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: "Template berhasil dibuat.",
+      ...result,
+    });
+  } catch (error) {
+    return handleTemplatesError(res, error, "CREATE TEMPLATE ERROR:");
+  }
+};
+
 export const applyTemplate = async (req, res) => {
   try {
     const identifier = getIdentifier(req);
