@@ -14,6 +14,7 @@ CREATE TABLE users (
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     display_name VARCHAR(100),
+    role VARCHAR(20) NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     max_energy INTEGER NOT NULL DEFAULT 240,
     current_energy INTEGER NOT NULL DEFAULT 240,
     energy_reset_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -77,12 +78,20 @@ CREATE INDEX idx_tasks_guest_session ON tasks(guest_session_id) WHERE deleted_at
 -- ============================================================
 CREATE TABLE task_templates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name VARCHAR(100) NOT NULL UNIQUE,
+    key VARCHAR(120) NOT NULL UNIQUE,
+    name VARCHAR(100) NOT NULL,
     description TEXT NULL,
+    created_by_user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL,
+    visibility VARCHAR(20) NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private')),
+    level VARCHAR(20) NOT NULL DEFAULT 'Medium' CHECK (level IN ('Low', 'Medium', 'High')),
+    is_official BOOLEAN NOT NULL DEFAULT FALSE,
+    usage_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMP NULL
 );
+
+CREATE INDEX idx_task_templates_visibility ON task_templates(visibility, created_by_user_id) WHERE deleted_at IS NULL;
 
 -- ============================================================
 -- 5. TABEL: template_items
@@ -91,6 +100,7 @@ CREATE TABLE template_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     template_id UUID NOT NULL REFERENCES task_templates(id) ON DELETE CASCADE,
     title VARCHAR(255) NOT NULL,
+    description TEXT NULL,
     energy_weight VARCHAR(20) NOT NULL CHECK (energy_weight IN ('Ringan', 'Sedang', 'Berat')),
     sort_order INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),

@@ -1,7 +1,10 @@
 import { Router } from "express";
 
 import * as templatesController from "./templates.controller.js";
-import { templateKeyParamSchema } from "./templates.validation.js";
+import {
+  createTemplateSchema,
+  templateKeyParamSchema,
+} from "./templates.validation.js";
 
 import { validate } from "../../middlewares/validate.middleware.js";
 import { guestOrAuthMiddleware } from "../../middlewares/guestOrAuth.middleware.js";
@@ -15,6 +18,15 @@ router.get(
   guestOrAuthMiddleware,
   loginWallMiddleware,
   templatesController.getTemplates,
+);
+
+// POST /api/v1/templates
+router.post(
+  "/",
+  guestOrAuthMiddleware,
+  loginWallMiddleware,
+  validate(createTemplateSchema),
+  templatesController.createTemplate,
 );
 
 // POST /api/v1/templates/apply/:template_key

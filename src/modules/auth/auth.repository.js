@@ -12,6 +12,7 @@ export const findUserByEmail = async (email, executor = db) => {
         email,
         password_hash,
         display_name,
+        role,
         current_energy,
         max_energy,
         created_at,
@@ -28,7 +29,7 @@ export const findUserByEmail = async (email, executor = db) => {
 
 // CREATE USER
 export const createUser = async (
-  { email, password_hash, display_name },
+  { email, password_hash, display_name, role = "user" },
   executor = db,
 ) => {
   const { rows } = await executor.query(
@@ -36,19 +37,21 @@ export const createUser = async (
       INSERT INTO users (
         email,
         password_hash,
-        display_name
+        display_name,
+        role
       )
-      VALUES ($1, $2, $3)
+      VALUES ($1, $2, $3, $4)
       RETURNING
         id,
         email,
         display_name,
+        role,
         current_energy,
         max_energy,
         created_at,
         updated_at
     `,
-    [email, password_hash, display_name],
+    [email, password_hash, display_name, role],
   );
 
   return rows[0];
@@ -63,6 +66,7 @@ export const findUserById = async (id, executor = db) => {
         id,
         email,
         display_name,
+        role,
         current_energy,
         max_energy,
         created_at,
@@ -95,6 +99,7 @@ export const updateUserPassword = async (
         id,
         email,
         display_name,
+        role,
         current_energy,
         max_energy,
         created_at,

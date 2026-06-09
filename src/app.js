@@ -13,6 +13,7 @@ import templatesRoutes from "./modules/templates/templates.routes.js";
 import focusRoutes from "./modules/focus/focus.routes.js";
 import energyRoutes from "./modules/energy/energy.routes.js";
 import notificationsRoutes from "./modules/notifications/notifications.routes.js";
+import adminRoutes from "./modules/admin/admin.routes.js";
 
 import errorMiddleware from "./middlewares/error.middleware.js";
 
@@ -70,6 +71,7 @@ app.use("/api/v1/templates", templatesRoutes);
 app.use("/api/v1/focus", focusRoutes);
 app.use("/api/v1/energy", energyRoutes);
 app.use("/api/v1/notifications", notificationsRoutes);
+app.use("/api/v1/admin", adminRoutes);
 
 app.use((req, res) => {
   return res.status(404).json({
