@@ -61,7 +61,7 @@ export const createTemplateSchema = z
       })
       .trim()
       .min(1, "Nama template wajib diisi!")
-      .max(100, "Nama template maksimal 100 karakter!"),
+      .max(60, "Nama template maksimal 60 karakter!"),
     description: z
       .string({
         invalid_type_error: "Deskripsi harus berupa teks!",

@@ -249,13 +249,15 @@ const generateUniqueTemplateKey = async (name, executor = db) => {
   return `${baseKey}-${crypto.randomUUID().slice(0, 8)}`;
 };
 
-export const createTemplate = async (userId, data) => {
+export const createTemplate = async (userId, data, options = {}) => {
   const client = await db.connect();
 
   try {
     await client.query("BEGIN");
 
     const key = await generateUniqueTemplateKey(data.name, client);
+    const isOfficial = options.isOfficial === true;
+    const visibility = isOfficial ? "public" : data.visibility;
 
     const { rows } = await client.query(
       `
@@ -269,7 +271,7 @@ export const createTemplate = async (userId, data) => {
           is_official,
           usage_count
         )
-        VALUES ($1, $2, $3, $4, $5, $6, FALSE, 0)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 0)
         RETURNING
           id,
           key,
@@ -288,8 +290,9 @@ export const createTemplate = async (userId, data) => {
         data.name,
         data.description ?? null,
         userId,
-        data.visibility,
+        visibility,
         data.level,
+        isOfficial,
       ],
     );
 

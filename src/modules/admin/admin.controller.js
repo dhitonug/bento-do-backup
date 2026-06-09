@@ -35,6 +35,20 @@ export const getTemplates = async (req, res) => {
   }
 };
 
+export const createTemplate = async (req, res) => {
+  try {
+    const result = await adminService.createTemplate(req.user.user_id, req.body);
+
+    return res.status(201).json({
+      success: true,
+      message: "Template official berhasil dibuat.",
+      ...result,
+    });
+  } catch (error) {
+    return handleAdminError(res, error, "CREATE ADMIN TEMPLATE ERROR:");
+  }
+};
+
 export const deleteTemplate = async (req, res) => {
   try {
     await adminService.deleteTemplate(req.params.template_id);
