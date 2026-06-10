@@ -455,6 +455,7 @@ export const applyTemplate = async (identifier, template, sourceTemplate = null)
           user_id: identifier.user_id ?? null,
           guest_session_id: identifier.guest_session_id ?? null,
           title: item.title,
+          description: item.description ?? null,
           energy_weight: item.energy_weight,
           deadline: null,
           source_template: sourceTemplate ?? template.name,

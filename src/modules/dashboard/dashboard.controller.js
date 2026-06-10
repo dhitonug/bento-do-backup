@@ -45,3 +45,39 @@ export const getZenDashboard = async (req, res) => {
     return handleDashboardError(res, error, "GET ZEN DASHBOARD ERROR:");
   }
 };
+
+export const getDashboardOverview = async (req, res) => {
+  try {
+    const identifier = getIdentifier(req);
+
+    const result = await dashboardService.getDashboardOverview(
+      identifier,
+      req.query,
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return handleDashboardError(res, error, "GET DASHBOARD OVERVIEW ERROR:");
+  }
+};
+
+export const getDashboardHistory = async (req, res) => {
+  try {
+    const identifier = getIdentifier(req);
+
+    const result = await dashboardService.getDashboardHistory(
+      identifier,
+      req.query,
+    );
+
+    return res.status(200).json({
+      success: true,
+      ...result,
+    });
+  } catch (error) {
+    return handleDashboardError(res, error, "GET DASHBOARD HISTORY ERROR:");
+  }
+};

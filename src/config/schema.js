@@ -182,6 +182,44 @@ export const ensureOperationalTables = async () => {
   await db.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`);
 
   await db.query(`
+    DO $$
+    BEGIN
+      IF to_regclass('public.tasks') IS NOT NULL THEN
+        ALTER TABLE tasks
+        ADD COLUMN IF NOT EXISTS description TEXT NULL;
+      END IF;
+
+      IF to_regclass('public.focus_sessions') IS NOT NULL THEN
+        ALTER TABLE focus_sessions
+        ALTER COLUMN user_id DROP NOT NULL;
+
+        ALTER TABLE focus_sessions
+        ADD COLUMN IF NOT EXISTS guest_session_id UUID NULL REFERENCES guest_sessions(id) ON DELETE CASCADE;
+      END IF;
+    END $$;
+  `);
+
+  await db.query(`
+    DO $$
+    BEGIN
+      IF to_regclass('public.focus_sessions') IS NOT NULL THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_focus_sessions_user_active ON focus_sessions(user_id, ended_at) WHERE deleted_at IS NULL';
+        EXECUTE 'CREATE INDEX IF NOT EXISTS idx_focus_sessions_guest_active ON focus_sessions(guest_session_id, ended_at) WHERE deleted_at IS NULL';
+      END IF;
+    END $$;
+  `);
+
+  await addCheckConstraintIfMissing(
+    "focus_sessions_owner_check",
+    `ALTER TABLE focus_sessions
+      ADD CONSTRAINT focus_sessions_owner_check
+      CHECK (
+        (user_id IS NOT NULL AND guest_session_id IS NULL)
+        OR (user_id IS NULL AND guest_session_id IS NOT NULL)
+      ) NOT VALID;`,
+  );
+
+  await db.query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user'
   `);

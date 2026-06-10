@@ -39,6 +39,18 @@ const optionalSourceTemplateSchema = z
   ])
   .optional();
 
+const optionalDescriptionSchema = z
+  .union([
+    z
+      .string({
+        invalid_type_error: "Deskripsi tugas harus berupa teks!",
+      })
+      .trim()
+      .max(1000, "Deskripsi tugas maksimal 1000 karakter!"),
+    z.null(),
+  ])
+  .optional();
+
 // CREATE TASK SCHEMA
 export const createTaskSchema = z
   .object({
@@ -50,6 +62,8 @@ export const createTaskSchema = z
       .trim()
       .min(3, "Judul tugas minimal 3 karakter!")
       .max(255, "Judul tugas maksimal 255 karakter!"),
+
+    description: optionalDescriptionSchema,
 
     energy_weight: energyWeightEnum,
 
@@ -72,6 +86,8 @@ export const updateTaskSchema = z
       .optional(),
 
     energy_weight: energyWeightEnum.optional(),
+
+    description: optionalDescriptionSchema,
 
     status: taskStatusEnum.optional(),
 

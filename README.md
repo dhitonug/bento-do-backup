@@ -65,6 +65,24 @@ Jangan commit `.env`.
 - [Dokumentasi Tasks API](./Dokumentasi%20Tasks%20API.md)
 - [Dokumentasi Notification API](./Dokumentasi%20Notification%20API.md)
 
+## Endpoint Tambahan untuk FE
+
+Endpoint agregasi yang siap dipakai dashboard, history, dan admin:
+
+```text
+GET /api/v1/dashboard/overview?period=weekly&calendar_date=2026-06-10
+GET /api/v1/dashboard/history?type=all&page=1&limit=20
+GET /api/v1/admin/dashboard?period=weekly
+GET /api/v1/admin/templates?page=1&limit=20
+```
+
+Catatan:
+
+- `period` menerima `daily`, `weekly`, `monthly`, atau `yearly`.
+- `dashboard/overview` dan `dashboard/history` mendukung user login dan guest session.
+- Endpoint `/admin/*` butuh JWT user dengan role `admin`.
+- `GET /api/v1/tasks/:id` sekarang mengembalikan `focus_summary` dan `latest_focus_session` untuk popup detail task.
+
 ## Status
 
 Backend sudah mencakup auth, guest mode, tasks, templates, dashboard, focus, energy, in-app notifications, forgot/reset password via email, dan deadline reminder email.

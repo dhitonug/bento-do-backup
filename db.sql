@@ -58,6 +58,7 @@ CREATE TABLE tasks (
     user_id UUID NULL REFERENCES users(id) ON DELETE SET NULL,
     guest_session_id UUID NULL REFERENCES guest_sessions(id) ON DELETE SET NULL,
     title VARCHAR(255) NOT NULL,
+    description TEXT NULL,
     energy_weight VARCHAR(20) NOT NULL CHECK (energy_weight IN ('Ringan', 'Sedang', 'Berat')),
     deadline TIMESTAMP NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'done')),
@@ -113,7 +114,8 @@ CREATE TABLE template_items (
 -- ============================================================
 CREATE TABLE focus_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NULL REFERENCES users(id) ON DELETE CASCADE,
+    guest_session_id UUID NULL REFERENCES guest_sessions(id) ON DELETE CASCADE,
     task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     started_at TIMESTAMP NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMP NULL,
@@ -121,8 +123,15 @@ CREATE TABLE focus_sessions (
     end_reason VARCHAR(30) NULL CHECK (end_reason IN ('completed', 'escaped', 'zombie_limit', 'crash')),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMP NULL
+    deleted_at TIMESTAMP NULL,
+    CONSTRAINT focus_sessions_owner_check CHECK (
+        (user_id IS NOT NULL AND guest_session_id IS NULL)
+        OR (user_id IS NULL AND guest_session_id IS NOT NULL)
+    )
 );
+
+CREATE INDEX idx_focus_sessions_user_active ON focus_sessions(user_id, ended_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_focus_sessions_guest_active ON focus_sessions(guest_session_id, ended_at) WHERE deleted_at IS NULL;
 
 -- ============================================================
 -- 7. TABEL: energy_logs

@@ -13,6 +13,38 @@ export const getAdminStats = async () => {
   return rows[0];
 };
 
+export const getAdminStatsWithPeriod = async ({
+  currentStart,
+  currentEnd,
+  previousStart,
+  previousEnd,
+}) => {
+  const { rows } = await db.query(
+    `
+      SELECT
+        (SELECT COUNT(*)::int FROM guest_sessions WHERE deleted_at IS NULL) AS guest_users,
+        (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND role <> 'admin') AS users,
+        (SELECT COUNT(*)::int FROM tasks WHERE deleted_at IS NULL) AS tasks,
+        (SELECT COUNT(*)::int FROM task_templates WHERE deleted_at IS NULL) AS templates,
+
+        (SELECT COUNT(*)::int FROM guest_sessions WHERE deleted_at IS NULL AND created_at >= $1 AND created_at < $2) AS guest_users_current,
+        (SELECT COUNT(*)::int FROM guest_sessions WHERE deleted_at IS NULL AND created_at >= $3 AND created_at < $4) AS guest_users_previous,
+
+        (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND role <> 'admin' AND created_at >= $1 AND created_at < $2) AS users_current,
+        (SELECT COUNT(*)::int FROM users WHERE deleted_at IS NULL AND role <> 'admin' AND created_at >= $3 AND created_at < $4) AS users_previous,
+
+        (SELECT COUNT(*)::int FROM tasks WHERE deleted_at IS NULL AND created_at >= $1 AND created_at < $2) AS tasks_current,
+        (SELECT COUNT(*)::int FROM tasks WHERE deleted_at IS NULL AND created_at >= $3 AND created_at < $4) AS tasks_previous,
+
+        (SELECT COUNT(*)::int FROM task_templates WHERE deleted_at IS NULL AND created_at >= $1 AND created_at < $2) AS templates_current,
+        (SELECT COUNT(*)::int FROM task_templates WHERE deleted_at IS NULL AND created_at >= $3 AND created_at < $4) AS templates_previous
+    `,
+    [currentStart, currentEnd, previousStart, previousEnd],
+  );
+
+  return rows[0];
+};
+
 export const getUserActivityLastSevenDays = async () => {
   const { rows } = await db.query(`
     WITH days AS (
@@ -38,6 +70,30 @@ export const getUserActivityLastSevenDays = async () => {
     labels: rows.map((row) => row.label.trim()),
     data: rows.map((row) => row.value),
   };
+};
+
+export const getUserActivityForRange = async ({ start, end }) => {
+  const { rows } = await db.query(
+    `
+      SELECT created_at, 'user'::text AS source
+      FROM users
+      WHERE deleted_at IS NULL
+      AND role <> 'admin'
+      AND created_at >= $1
+      AND created_at < $2
+
+      UNION ALL
+
+      SELECT created_at, 'guest'::text AS source
+      FROM guest_sessions
+      WHERE deleted_at IS NULL
+      AND created_at >= $1
+      AND created_at < $2
+    `,
+    [start, end],
+  );
+
+  return rows;
 };
 
 export const listTemplates = async () => {

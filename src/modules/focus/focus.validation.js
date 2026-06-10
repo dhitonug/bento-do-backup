@@ -12,9 +12,16 @@ export const focusEndReasonEnum = z.enum(
 
 export const startFocusSchema = z
   .object({
-    task_id: z.string().uuid("Format Task ID harus UUID yang valid!"),
+    task_id: z.string().uuid("Format Task ID harus UUID yang valid!").optional(),
+    taskId: z.string().uuid("Format Task ID harus UUID yang valid!").optional(),
   })
-  .strict();
+  .strict()
+  .refine((data) => data.task_id || data.taskId, {
+    message: "Task ID wajib diisi!",
+  })
+  .transform((data) => ({
+    task_id: data.task_id ?? data.taskId,
+  }));
 
 export const stopFocusSchema = z
   .object({

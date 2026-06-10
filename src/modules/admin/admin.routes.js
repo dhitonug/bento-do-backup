@@ -1,7 +1,11 @@
 import { Router } from "express";
 
 import * as adminController from "./admin.controller.js";
-import { templateIdParamSchema } from "./admin.validation.js";
+import {
+  adminDashboardQuerySchema,
+  adminTemplatesQuerySchema,
+  templateIdParamSchema,
+} from "./admin.validation.js";
 import { createTemplateSchema } from "../templates/templates.validation.js";
 import authMiddleware from "../../middlewares/auth.middleware.js";
 import requireAdminMiddleware from "../../middlewares/admin.middleware.js";
@@ -12,10 +16,18 @@ const router = Router();
 router.use(authMiddleware, requireAdminMiddleware);
 
 // GET /api/v1/admin/dashboard
-router.get("/dashboard", adminController.getDashboard);
+router.get(
+  "/dashboard",
+  validate(adminDashboardQuerySchema, "query"),
+  adminController.getDashboard,
+);
 
 // GET /api/v1/admin/templates
-router.get("/templates", adminController.getTemplates);
+router.get(
+  "/templates",
+  validate(adminTemplatesQuerySchema, "query"),
+  adminController.getTemplates,
+);
 
 // POST /api/v1/admin/templates
 router.post(
