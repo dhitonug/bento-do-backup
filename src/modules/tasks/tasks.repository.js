@@ -58,6 +58,7 @@ export const createTask = async (data, executor = db) => {
     user_id,
     guest_session_id,
     title,
+    description,
     energy_weight,
     deadline,
     source_template,
@@ -69,16 +70,18 @@ export const createTask = async (data, executor = db) => {
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         source_template
       )
-      VALUES ($1, $2, $3, $4, $5, $6)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING
         id,
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,
@@ -93,6 +96,7 @@ export const createTask = async (data, executor = db) => {
       user_id ?? null,
       guest_session_id ?? null,
       title,
+      description ?? null,
       energy_weight,
       deadline ?? null,
       source_template ?? null,
@@ -138,6 +142,7 @@ export const getTasksWithPagination = async (
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,
@@ -186,6 +191,7 @@ export const getZenDashboardTasks = async (identifier, executor = db) => {
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,
@@ -259,6 +265,7 @@ export const getTaskById = async (id, identifier, executor = db) => {
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,
@@ -279,6 +286,77 @@ export const getTaskById = async (id, identifier, executor = db) => {
   return rows[0] || null;
 };
 
+export const getTaskFocusMetadata = async (
+  id,
+  identifier,
+  executor = db,
+) => {
+  const { field, value } = getIdentifierFilter(identifier);
+
+  const summaryResult = await executor.query(
+    `
+      SELECT
+        COUNT(*)::int AS total_sessions,
+        COALESCE(SUM(
+          GREATEST(
+            0,
+            COALESCE(
+              fs.duration_minutes,
+              FLOOR(EXTRACT(EPOCH FROM (COALESCE(fs.ended_at, NOW()) - fs.started_at)) / 60)::int
+            )
+          )
+        ), 0)::int AS total_focus_minutes,
+        COALESCE(MAX(
+          GREATEST(
+            0,
+            COALESCE(
+              fs.duration_minutes,
+              FLOOR(EXTRACT(EPOCH FROM (COALESCE(fs.ended_at, NOW()) - fs.started_at)) / 60)::int
+            )
+          )
+        ), 0)::int AS longest_session_minutes,
+        COUNT(*) FILTER (WHERE fs.end_reason = 'completed')::int AS completed_sessions
+      FROM focus_sessions fs
+      WHERE fs.task_id = $1
+      AND fs.${field} = $2
+      AND fs.deleted_at IS NULL
+    `,
+    [id, value],
+  );
+
+  const latestResult = await executor.query(
+    `
+      SELECT
+        fs.id,
+        fs.task_id,
+        fs.started_at,
+        fs.ended_at,
+        fs.duration_minutes,
+        fs.end_reason,
+        fs.created_at,
+        fs.updated_at,
+        NULL::int AS focus_score
+      FROM focus_sessions fs
+      WHERE fs.task_id = $1
+      AND fs.${field} = $2
+      AND fs.deleted_at IS NULL
+      ORDER BY COALESCE(fs.ended_at, fs.started_at) DESC
+      LIMIT 1
+    `,
+    [id, value],
+  );
+
+  return {
+    summary: summaryResult.rows[0] || {
+      total_sessions: 0,
+      total_focus_minutes: 0,
+      longest_session_minutes: 0,
+      completed_sessions: 0,
+    },
+    latest_session: latestResult.rows[0] || null,
+  };
+};
+
 // UPDATE TASK
 export const updateTask = async (id, identifier, data, executor = db) => {
   const { field, value } = getIdentifierFilter(identifier);
@@ -294,6 +372,11 @@ export const updateTask = async (id, identifier, data, executor = db) => {
   if (hasOwn(data, "energy_weight")) {
     values.push(data.energy_weight);
     setClauses.push(`energy_weight = $${values.length}`);
+  }
+
+  if (hasOwn(data, "description")) {
+    values.push(data.description);
+    setClauses.push(`description = $${values.length}`);
   }
 
   if (hasOwn(data, "deadline")) {
@@ -336,6 +419,7 @@ export const updateTask = async (id, identifier, data, executor = db) => {
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,
@@ -393,6 +477,7 @@ export const migrateGuestTasksToUser = async (
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,

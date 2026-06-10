@@ -6,6 +6,20 @@ const periodEnum = z.enum(["daily", "weekly", "monthly", "yearly"], {
   }),
 });
 
+const historyTypeEnum = z.enum(["all", "task", "focus"], {
+  errorMap: () => ({
+    message: "Type hanya boleh 'all', 'task', atau 'focus'!",
+  }),
+});
+
+const dateOnlySchema = z
+  .string({
+    invalid_type_error: "Tanggal harus berupa teks!",
+  })
+  .regex(/^\d{4}-\d{2}-\d{2}$/, {
+    message: "Format tanggal harus YYYY-MM-DD!",
+  });
+
 const paginationFields = {
   page: z.coerce
     .number({
@@ -25,20 +39,19 @@ const paginationFields = {
     .default(20),
 };
 
-export const adminDashboardQuerySchema = z
+export const dashboardOverviewQuerySchema = z
   .object({
     period: periodEnum.default("weekly"),
+    calendar_date: dateOnlySchema.optional(),
+    month: dateOnlySchema.optional(),
   })
   .strict();
 
-export const adminTemplatesQuerySchema = z
+export const dashboardHistoryQuerySchema = z
   .object({
+    type: historyTypeEnum.default("all"),
+    from: dateOnlySchema.optional(),
+    to: dateOnlySchema.optional(),
     ...paginationFields,
-  })
-  .strict();
-
-export const templateIdParamSchema = z
-  .object({
-    template_id: z.string().uuid("Format Template ID harus UUID yang valid!"),
   })
   .strict();

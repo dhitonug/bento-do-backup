@@ -11,7 +11,7 @@ const handleAdminError = (res, error, fallbackLabel) => {
 
 export const getDashboard = async (req, res) => {
   try {
-    const data = await adminService.getDashboard();
+    const data = await adminService.getDashboard(req.query);
 
     return res.status(200).json({
       success: true,
@@ -24,7 +24,7 @@ export const getDashboard = async (req, res) => {
 
 export const getTemplates = async (req, res) => {
   try {
-    const result = await adminService.getTemplates();
+    const result = await adminService.getTemplates(req.query);
 
     return res.status(200).json({
       success: true,
@@ -37,7 +37,10 @@ export const getTemplates = async (req, res) => {
 
 export const createTemplate = async (req, res) => {
   try {
-    const result = await adminService.createTemplate(req.user.user_id, req.body);
+    const result = await adminService.createTemplate(
+      req.user.id ?? req.user.user_id,
+      req.body,
+    );
 
     return res.status(201).json({
       success: true,

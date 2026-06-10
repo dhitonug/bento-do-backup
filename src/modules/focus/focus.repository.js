@@ -40,6 +40,7 @@ export const findActiveFocusSessionByIdentifier = async (
         fs.created_at,
         fs.updated_at,
         t.title AS task_title,
+        t.description AS task_description,
         t.energy_weight,
         t.status AS task_status,
         GREATEST(
@@ -83,6 +84,7 @@ export const findActiveFocusSessionById = async (
         fs.created_at,
         fs.updated_at,
         t.title AS task_title,
+        t.description AS task_description,
         t.energy_weight,
         t.status AS task_status,
         GREATEST(
@@ -154,6 +156,7 @@ export const markTaskInProgress = async (taskId, identifier, executor = db) => {
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,
@@ -272,6 +275,7 @@ export const markTaskAfterFocus = async (
         user_id,
         guest_session_id,
         title,
+        description,
         energy_weight,
         deadline,
         status,

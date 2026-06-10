@@ -118,7 +118,24 @@ export const getTaskById = async (id, identifier) => {
     throw createAppError("Tugas tidak ditemukan!", 404);
   }
 
-  return task;
+  const focusMetadata = await taskRepo.getTaskFocusMetadata(id, identifier);
+  const totalFocusMinutes =
+    Number(focusMetadata.summary.total_focus_minutes) || 0;
+
+  return {
+    ...task,
+    focus_summary: {
+      total_sessions: Number(focusMetadata.summary.total_sessions) || 0,
+      total_focus_minutes: totalFocusMinutes,
+      total_focus_time_label: `${Math.floor(totalFocusMinutes / 60)}h ${totalFocusMinutes % 60}m`,
+      longest_session_minutes:
+        Number(focusMetadata.summary.longest_session_minutes) || 0,
+      completed_sessions:
+        Number(focusMetadata.summary.completed_sessions) || 0,
+      average_focus_score: null,
+    },
+    latest_focus_session: focusMetadata.latest_session,
+  };
 };
 
 // UPDATE TASK

@@ -48,6 +48,15 @@ Endpoint utama:
 /api/v1/dashboard/zen
 ```
 
+Endpoint tambahan untuk kebutuhan FE terbaru:
+
+```text
+GET /api/v1/dashboard/overview?period=weekly&calendar_date=2026-06-10
+GET /api/v1/dashboard/history?type=all&page=1&limit=20
+```
+
+`/overview` mengembalikan metrics dashboard user, priority task, chart productivity, recent tasks, calendar counts, focus summary, dan preview notification. `/history` mengembalikan gabungan riwayat task dan focus session. Bagian admin menggunakan endpoint existing `/api/v1/admin/dashboard` dan `/api/v1/admin/templates`.
+
 ---
 
 ## 2. Tujuan Module Dashboard
